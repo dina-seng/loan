@@ -12,6 +12,7 @@ import {
   findBorrowerNameMatch,
   getMonthOptions,
   todayStr,
+  normalizeDate,
 } from './utils';
 
 describe('formatMoney', () => {
@@ -205,5 +206,21 @@ describe('todayStr', () => {
   it('returns a valid yyyy-mm-dd string', () => {
     const result = todayStr();
     expect(result).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+describe('normalizeDate', () => {
+  it('preserves standard yyyy-mm-dd', () => {
+    expect(normalizeDate('2026-11-10')).toBe('2026-11-10');
+  });
+
+  it('normalizes Google Sheets date strings to yyyy-mm-dd', () => {
+    const sheetDate = 'Tue Nov 10 2026 00:00:00 GMT+0700 (ម៉ោង​នៅ​ឥណ្ឌូចិន)';
+    expect(normalizeDate(sheetDate)).toBe('2026-11-10');
+  });
+
+  it('handles empty or null values', () => {
+    expect(normalizeDate('')).toBe('');
+    expect(normalizeDate(null)).toBe('');
   });
 });

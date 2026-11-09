@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { formatMoney, formatDate } from '../utils';
+import { formatMoney, formatDate, normalizeDate } from '../utils';
 
 export default function TransactionLog({ transactions, monthOptions, onDelete }) {
   const [typeFilter, setTypeFilter] = useState('All');
@@ -14,12 +14,12 @@ export default function TransactionLog({ transactions, monthOptions, onDelete })
     }
 
     if (monthFilter !== 'All') {
-      result = result.filter(t => String(t.date).substring(0, 7) === monthFilter);
+      result = result.filter(t => normalizeDate(t.date).substring(0, 7) === monthFilter);
     }
 
     // Sort by date descending, then by id for stability
     result.sort((a, b) => {
-      const dateCompare = String(b.date).localeCompare(String(a.date));
+      const dateCompare = normalizeDate(b.date).localeCompare(normalizeDate(a.date));
       if (dateCompare !== 0) return dateCompare;
       return String(b.id).localeCompare(String(a.id));
     });

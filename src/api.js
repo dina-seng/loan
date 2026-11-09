@@ -20,7 +20,13 @@ async function request(body) {
     throw new Error(`HTTP ${res.status}: ${res.statusText}`);
   }
 
-  const data = await res.json();
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error('ប្រព័ន្ធ Google Sheet កំពុងមមាញឹក សូមរង់ចាំបន្តិចហើយព្យាយាមម្តងទៀត (Google Apps Script is busy, please try again in a few moments)');
+  }
 
   if (!data.ok) {
     const err = new Error(data.error || 'Unknown error');

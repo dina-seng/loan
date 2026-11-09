@@ -79,6 +79,23 @@ export function computeBorrowerSummary(transactions) {
 }
 
 /**
+ * Normalizes any date representation (including Google Sheets date strings) to 'yyyy-mm-dd'.
+ */
+export function normalizeDate(dateVal) {
+  if (!dateVal) return '';
+  const str = String(dateVal).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+  return str.slice(0, 10);
+}
+
+/**
  * Compute monthly breakdown from transactions.
  * Groups by yyyy-MM (from transaction date). Within each month: lent, repaid, balance.
  * Returns sorted by month descending (newest first).
@@ -88,7 +105,8 @@ export function computeBorrowerSummary(transactions) {
 export function computeMonthlyTable(transactions) {
   const map = {};
   for (const t of transactions) {
-    const month = String(t.date).substring(0, 7); // yyyy-MM
+    const month = normalizeDate(t.date).substring(0, 7); // yyyy-MM
+    if (!month || month.length < 7) continue;
     if (!map[month]) map[month] = { month, lent: 0, repaid: 0 };
     if (t.type === 'Lend') map[month].lent += Number(t.amount);
     else if (t.type === 'Repay') map[month].repaid += Number(t.amount);
@@ -163,7 +181,7 @@ export function findBorrowerNameMatch(candidate, borrowers) {
  */
 export function formatDate(dateStr) {
   if (!dateStr) return '';
-  return dateStr; // yyyy-mm-dd is clear enough
+  return normalizeDate(dateStr);
 }
 
 /**
@@ -184,7 +202,7 @@ export function todayStr() {
 export function getMonthOptions(transactions) {
   const months = new Set();
   for (const t of transactions) {
-    const m = String(t.date).substring(0, 7);
+    const m = normalizeDate(t.date).substring(0, 7);
     if (m) months.add(m);
   }
   return [...months]
