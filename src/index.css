@@ -1,0 +1,105 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Noto Sans Khmer', system-ui, sans-serif;
+    min-width: 320px;
+  }
+
+  body {
+    @apply bg-slate-50 text-slate-800 antialiased;
+    overflow-x: hidden;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center rounded-lg px-4 py-3 font-semibold
+           transition-colors duration-150;
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .btn-primary {
+    @apply btn text-white;
+    background-color: theme('colors.primary.600');
+  }
+  .btn-primary:hover {
+    background-color: theme('colors.primary.700');
+  }
+  .btn-primary:active {
+    background-color: theme('colors.primary.800');
+  }
+
+  .btn-success {
+    @apply btn text-white;
+    background-color: theme('colors.success.600');
+  }
+  .btn-success:hover {
+    background-color: theme('colors.success.700');
+  }
+  .btn-success:active {
+    background-color: theme('colors.success.800');
+  }
+
+  .btn-danger {
+    @apply btn bg-red-600 text-white hover:bg-red-700 active:bg-red-800;
+  }
+
+  .btn-outline {
+    @apply btn border-2 border-slate-300 text-slate-700 hover:bg-slate-100 active:bg-slate-200;
+  }
+
+  .card {
+    @apply rounded-xl bg-white p-4 shadow-sm border border-slate-100;
+  }
+
+  .input-field {
+    @apply w-full rounded-lg border border-slate-300 px-3 py-3 text-base
+           placeholder:text-slate-400 focus:ring-2 focus:outline-none transition-colors;
+    min-height: 44px;
+  }
+  .input-field:focus {
+    border-color: theme('colors.primary.500');
+    --tw-ring-color: theme('colors.primary.200');
+  }
+}
+
+@media (max-width: 639px) {
+  .card {
+    padding: 0.875rem;
+  }
+}
+
+.safe-area-fab {
+  right: max(1.5rem, env(safe-area-inset-right));
+  bottom: max(1.5rem, env(safe-area-inset-bottom));
+}
+
+.safe-area-sheet {
+  max-height: 90vh;
+  max-height: 90dvh;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Focus visibility */
+*:focus-visible {
+  outline: 2px solid theme('colors.primary.500');
+  outline-offset: 2px;
+}
+
+/* Respect prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
