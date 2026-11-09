@@ -78,8 +78,18 @@ describe('Category 3: Borrower Names, Unicode Normalization & Deduplication', ()
   });
 
   describe('3.4 Last Used Borrower Memory', () => {
+    let mockStorage: Record<string, string> = {};
+
     beforeEach(() => {
-      localStorage.clear();
+      mockStorage = {};
+      globalThis.localStorage = {
+        getItem: (key: string) => mockStorage[key] || null,
+        setItem: (key: string, value: string) => { mockStorage[key] = String(value); },
+        removeItem: (key: string) => { delete mockStorage[key]; },
+        clear: () => { mockStorage = {}; },
+        key: (index: number) => Object.keys(mockStorage)[index] || null,
+        length: 0,
+      } as Storage;
     });
 
     it('persists and retrieves the most recently used borrower in localStorage', () => {

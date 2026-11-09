@@ -91,11 +91,11 @@ export function mergeBorrowerRecords(
   oldName: string,
   newName: string
 ): Transaction[] {
-  const normalizedOld = normalizeBorrowerName(oldName);
+  const normalizedOld = normalizeBorrowerName(oldName).toLowerCase();
   const normalizedNew = normalizeBorrowerName(newName);
 
   return transactions.map(t => {
-    if (normalizeBorrowerName(t.borrower) === normalizedOld) {
+    if (normalizeBorrowerName(t.borrower).toLowerCase() === normalizedOld) {
       return { ...t, borrower: normalizedNew };
     }
     return t;

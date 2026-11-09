@@ -71,23 +71,23 @@ export function parseIntegerAmount(rawInput: string | number): {
     return { valid: false, value: 0, error: 'សូមបញ្ចូលតែលេខប៉ុណ្ណោះ (Digits only)' };
   }
 
+  // Maximum reasonable loan constraint: 100 Billion KHR (~$25M USD)
+  const MAX_LIMIT_KHR = 100_000_000_000;
+  if (normalized.length > 11 || Number(normalized) > MAX_LIMIT_KHR) {
+    return {
+      valid: false,
+      value: 0,
+      error: 'ចំនួនទឹកប្រាក់លើសពីកម្រិតកំណត់អតិបរមា (Amount exceeds maximum limit)',
+    };
+  }
+
   const num = Number(normalized);
 
   if (!Number.isSafeInteger(num) || num <= 0) {
     return {
       valid: false,
       value: 0,
-      error: num <= 0 ? 'ចំនួនទឹកប្រាក់ត្រូវតែធំជាង 0' : 'ចំនួនទឹកប្រាក់ធំពេក (Amount exceeds safe integer limit)',
-    };
-  }
-
-  // Maximum reasonable loan constraint: 100 Billion KHR (~$25M USD)
-  const MAX_LIMIT_KHR = 100_000_000_000;
-  if (num > MAX_LIMIT_KHR) {
-    return {
-      valid: false,
-      value: 0,
-      error: 'ចំនួនទឹកប្រាក់លើសពីកម្រិតកំណត់អតិបរមា (Amount exceeds maximum limit)',
+      error: 'ចំនួនទឹកប្រាក់ត្រូវតែធំជាង 0',
     };
   }
 
@@ -100,6 +100,9 @@ export function parseIntegerAmount(rawInput: string | number): {
  */
 export function sanitizeForGoogleSheets(input: string): string {
   if (!input) return '';
+  if (/^[=+\-@\t\r]/.test(input)) {
+    return `'${input}`;
+  }
   const trimmed = input.trim();
   if (/^[=+\-@\t\r]/.test(trimmed)) {
     return `'${trimmed}`;
