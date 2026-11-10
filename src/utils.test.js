@@ -13,6 +13,8 @@ import {
   getMonthOptions,
   todayStr,
   normalizeDate,
+  computeProductTotal,
+  computeSettlement,
 } from './utils';
 
 describe('formatMoney', () => {
@@ -222,5 +224,48 @@ describe('normalizeDate', () => {
   it('handles empty or null values', () => {
     expect(normalizeDate('')).toBe('');
     expect(normalizeDate(null)).toBe('');
+  });
+});
+
+describe('computeProductTotal and computeSettlement', () => {
+  const sampleProducts = [
+    { id: 'p1', date: '2026-11-01', borrower: 'Sokha', quantity: 10, unitPrice: 5000, total: 50000 },
+    { id: 'p2', date: '2026-11-05', borrower: 'Sokha', quantity: 20, unitPrice: 10000, total: 200000 },
+    { id: 'p3', date: '2026-11-06', borrower: 'Bopha', quantity: 5, unitPrice: 4000, total: 20000 },
+  ];
+
+  it('computes total product value for a specific borrower', () => {
+    expect(computeProductTotal(sampleProducts, 'Sokha')).toBe(250000);
+    expect(computeProductTotal(sampleProducts, 'Bopha')).toBe(20000);
+    expect(computeProductTotal(sampleProducts, 'Dina')).toBe(0);
+  });
+
+  it('computes total product value across all borrowers when borrower is null', () => {
+    expect(computeProductTotal(sampleProducts, null)).toBe(270000);
+  });
+
+  it('computes final settlement correctly: Outstanding Loan - Total Products', () => {
+    // Case 1: Loan > Products => Borrower owes Dad (positive)
+    expect(computeSettlement(400000, 250000)).toBe(150000);
+
+    // Case 2: Products > Loan => Dad owes Borrower (negative)
+    expect(computeSettlement(200000, 250000)).toBe(-50000);
+
+    // Case 3: Products == Loan => 0
+    expect(computeSettlement(250000, 250000)).toBe(0);
+  });
+
+  it('integrates products into computeBorrowerSummary', () => {
+    const txns = [
+      { id: '1', date: '2026-11-01', borrower: 'Sokha', type: 'Lend', amount: 500000 },
+      { id: '2', date: '2026-11-02', borrower: 'Sokha', type: 'Repay', amount: 100000 },
+    ];
+    // Outstanding loan = 400,000; Products = 250,000 => Settlement = 150,000
+    const summary = computeBorrowerSummary(txns, sampleProducts);
+    const sokha = summary.find(b => b.borrower === 'Sokha');
+    expect(sokha).toBeDefined();
+    expect(sokha.outstanding).toBe(400000);
+    expect(sokha.totalProducts).toBe(250000);
+    expect(sokha.settlement).toBe(150000);
   });
 });

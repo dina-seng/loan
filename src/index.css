@@ -86,6 +86,8 @@
   max-height: 90vh;
   max-height: 90dvh;
   padding-bottom: env(safe-area-inset-bottom);
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Focus visibility */

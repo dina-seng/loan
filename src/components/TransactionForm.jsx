@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo } from "react";
 import {
   findBorrowerNameMatch,
   formatInputNumber,
@@ -6,42 +6,58 @@ import {
   getUniqueBorrowers,
   normalizeBorrowerName,
   todayStr,
-} from '../utils';
+  computeTotals,
+  formatMoney,
+} from "../utils";
 
-const ADD_BORROWER_OPTION = '__add_new_borrower__';
+const ADD_BORROWER_OPTION = "__add_new_borrower__";
 
-export default function TransactionForm({ transactions, defaults, onSave, onClose }) {
+export default function TransactionForm({
+  transactions,
+  defaults,
+  onSave,
+  onClose,
+}) {
   const [date, setDate] = useState(defaults?.date || todayStr());
   const [borrower, setBorrower] = useState(() => {
     const names = getUniqueBorrowers(transactions);
     const preferredName = normalizeBorrowerName(
-      defaults?.borrower || localStorage.getItem('lms_last_borrower') || '',
+      defaults?.borrower || localStorage.getItem("lms_last_borrower") || "",
     ).toLowerCase();
-    return names.find(name => name.toLowerCase() === preferredName) || '';
+    return names.find((name) => name.toLowerCase() === preferredName) || "";
   });
-  const [type, setType] = useState(defaults?.type || 'Lend');
+  const [type, setType] = useState(defaults?.type || "Lend");
   const [amountDisplay, setAmountDisplay] = useState(
-    defaults?.amount ? formatInputNumber(String(defaults.amount)) : ''
+    defaults?.amount ? formatInputNumber(String(defaults.amount)) : "",
   );
-  const [note, setNote] = useState(defaults?.note || '');
+  const [note, setNote] = useState(defaults?.note || "");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [overpaymentWarning, setOverpaymentWarning] = useState("");
+  const [confirmOverpayment, setConfirmOverpayment] = useState(false);
   const [showAddBorrower, setShowAddBorrower] = useState(false);
-  const [newBorrowerName, setNewBorrowerName] = useState('');
+  const [newBorrowerName, setNewBorrowerName] = useState("");
   const [similarBorrower, setSimilarBorrower] = useState(null);
-  const [borrowerNotice, setBorrowerNotice] = useState('');
-  const [createdBorrower, setCreatedBorrower] = useState('');
+  const [borrowerNotice, setBorrowerNotice] = useState("");
+  const [createdBorrower, setCreatedBorrower] = useState("");
 
   const amountInputRef = useRef(null);
 
-  const borrowerNames = useMemo(() => getUniqueBorrowers(transactions), [transactions]);
+  const borrowerNames = useMemo(
+    () => getUniqueBorrowers(transactions),
+    [transactions],
+  );
 
   useEffect(() => {
-    const selectedExists = borrowerNames.some(name => name.toLowerCase() === borrower.toLowerCase());
-    const isNewSelection = createdBorrower && createdBorrower.toLowerCase() === borrower.toLowerCase();
+    const selectedExists = borrowerNames.some(
+      (name) => name.toLowerCase() === borrower.toLowerCase(),
+    );
+    const isNewSelection =
+      createdBorrower &&
+      createdBorrower.toLowerCase() === borrower.toLowerCase();
     if (borrower && !selectedExists && !isNewSelection) {
-      setBorrower('');
+      setBorrower("");
     }
   }, [borrowerNames, borrower, createdBorrower]);
 
@@ -60,39 +76,43 @@ export default function TransactionForm({ transactions, defaults, onSave, onClos
 
   const selectBorrower = (name) => {
     setBorrower(name);
-    setCreatedBorrower('');
+    setCreatedBorrower("");
     setShowAddBorrower(false);
-    setNewBorrowerName('');
+    setNewBorrowerName("");
     setSimilarBorrower(null);
-    setBorrowerNotice('');
+    setBorrowerNotice("");
   };
 
   const finishBorrowerCreation = (name) => {
     setBorrower(name);
     setCreatedBorrower(name);
     setShowAddBorrower(false);
-    setNewBorrowerName('');
+    setNewBorrowerName("");
     setSimilarBorrower(null);
-    setBorrowerNotice('');
-    setError('');
+    setBorrowerNotice("");
+    setError("");
   };
 
   const handleCreateBorrower = () => {
     const normalizedName = normalizeBorrowerName(newBorrowerName);
     if (!normalizedName) {
-      setBorrowerNotice('សូមបញ្ចូលឈ្មោះអ្នកខ្ចី (Please enter a borrower name)');
+      setBorrowerNotice(
+        "សូមបញ្ចូលឈ្មោះអ្នកខ្ចី (Please enter a borrower name)",
+      );
       return;
     }
 
     const match = findBorrowerNameMatch(normalizedName, borrowerNames);
-    if (match?.type === 'exact') {
-      setBorrowerNotice(`មានអ្នកខ្ចី "${match.borrower}" រួចហើយ (This borrower already exists).`);
+    if (match?.type === "exact") {
+      setBorrowerNotice(
+        `មានអ្នកខ្ចី "${match.borrower}" រួចហើយ (This borrower already exists).`,
+      );
       setSimilarBorrower(match);
       return;
     }
-    if (match?.type === 'similar') {
+    if (match?.type === "similar") {
       setSimilarBorrower({ ...match, candidate: normalizedName });
-      setBorrowerNotice('');
+      setBorrowerNotice("");
       return;
     }
     finishBorrowerCreation(normalizedName);
@@ -101,35 +121,61 @@ export default function TransactionForm({ transactions, defaults, onSave, onClos
   const resetForm = () => {
     setDate(todayStr());
     // Keep borrower name for convenience
-    setType('Lend');
-    setAmountDisplay('');
-    setNote('');
-    setError('');
+    setType("Lend");
+    setAmountDisplay("");
+    setNote("");
+    setError("");
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setError("");
 
     const amount = getRawNumber(amountDisplay);
 
     if (!date) {
-      setError('សូមជ្រើសរើសកាលបរិច្ឆេទ (Please select a date)');
+      setError("សូមជ្រើសរើសកាលបរិច្ឆេទ (Please select a date)");
       return;
     }
     if (!borrower.trim()) {
-      setError('សូមជ្រើសរើស ឬ បន្ថែមអ្នកខ្ចី (Please select or add a borrower)');
+      setError(
+        "សូមជ្រើសរើស ឬ បន្ថែមអ្នកខ្ចី (Please select or add a borrower)",
+      );
       return;
     }
     const normalizedBorrower = normalizeBorrowerName(borrower);
-    const borrowerExists = borrowerNames.some(name => name.toLowerCase() === normalizedBorrower.toLowerCase());
-    if (!borrowerExists && createdBorrower.toLowerCase() !== normalizedBorrower.toLowerCase()) {
-      setError('សូមជ្រើសរើសអ្នកខ្ចីដែលមានស្រាប់ ឬបន្ថែមថ្មី (Select an existing borrower or add a new one)');
+    const borrowerExists = borrowerNames.some(
+      (name) => name.toLowerCase() === normalizedBorrower.toLowerCase(),
+    );
+    if (
+      !borrowerExists &&
+      createdBorrower.toLowerCase() !== normalizedBorrower.toLowerCase()
+    ) {
+      setError(
+        "សូមជ្រើសរើសអ្នកខ្ចីដែលមានស្រាប់ ឬបន្ថែមថ្មី (Select an existing borrower or add a new one)",
+      );
       return;
     }
     if (amount <= 0) {
-      setError('ចំនួនទឹកប្រាក់ត្រូវតែធំជាង 0 (Amount must be greater than 0)');
+      setError("ចំនួនទឹកប្រាក់ត្រូវតែធំជាង 0 (Amount must be greater than 0)");
       return;
+    }
+
+    // Overpayment check for Repay
+    if (type === "Repay" && !confirmOverpayment) {
+      const summary = computeTotals(
+        transactions.filter(
+          (t) =>
+            normalizeBorrowerName(t.borrower).toLowerCase() ===
+            normalizedBorrower.toLowerCase(),
+        ),
+      );
+      if (summary.balance > 0 && amount > summary.balance) {
+        setOverpaymentWarning(
+          `ការសងចំនួន ${formatMoney(amount)} លើសពីបំណុលបច្ចុប្បន្ន (${formatMoney(summary.balance)}) ចំនួន ${formatMoney(amount - summary.balance)}! តើអ្នកប្រាកដថាចង់បន្ត?`,
+        );
+        return;
+      }
     }
 
     setSaving(true);
@@ -142,24 +188,37 @@ export default function TransactionForm({ transactions, defaults, onSave, onClos
         note: note.trim(),
       });
       if (saved === false) {
-        throw new Error('Your session expired. Please log in and try again.');
+        throw new Error("Your session expired. Please log in and try again.");
       }
       // Remember last used borrower
-      localStorage.setItem('lms_last_borrower', normalizedBorrower);
+      localStorage.setItem("lms_last_borrower", normalizedBorrower);
       setSuccess(true);
+      setConfirmOverpayment(false);
+      setOverpaymentWarning("");
       resetForm();
       setTimeout(() => {
         setSuccess(false);
       }, 3000);
     } catch (err) {
-      setError('រក្សាទុកមិនបានសម្រេច: ' + err.message + ' (Save failed - tap retry)');
+      if (err.message === "month_settled" || err.code === "month_settled") {
+        setError(
+          "ខែនេះត្រូវបានទូទាត់បិទរួចហើយ មិនអាចបន្ថែមប្រតិបត្តិការបានទេ (This month is settled and locked)",
+        );
+      } else {
+        setError(
+          "រក្សាទុកមិនបានសម្រេច: " + err.message + " (Save failed - tap retry)",
+        );
+      }
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-40 flex flex-col justify-end bg-black/40" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-40 flex flex-col justify-end bg-black/40"
+      onClick={onClose}
+    >
       <div
         className="safe-area-sheet bg-white rounded-t-2xl shadow-2xl overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
@@ -174,8 +233,18 @@ export default function TransactionForm({ transactions, defaults, onSave, onClos
             className="min-h-[44px] min-w-[44px] flex items-center justify-center text-slate-400 hover:text-slate-600"
             aria-label="បិទ (Close)"
           >
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            <svg
+              className="h-6 w-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -183,8 +252,16 @@ export default function TransactionForm({ transactions, defaults, onSave, onClos
         {/* Success Message */}
         {success && (
           <div className="mx-4 mt-4 bg-success-50 border border-success-200 text-success-700 rounded-lg p-3 text-sm flex items-center gap-2">
-            <svg className="h-5 w-5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+            <svg
+              className="h-5 w-5 flex-shrink-0"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path
+                fillRule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                clipRule="evenodd"
+              />
             </svg>
             រក្សាទុកបានសម្រេច! (Saved successfully!)
           </div>
@@ -200,7 +277,10 @@ export default function TransactionForm({ transactions, defaults, onSave, onClos
 
           {/* Date */}
           <div>
-            <label htmlFor="txn-date" className="block text-sm font-medium text-slate-600 mb-1">
+            <label
+              htmlFor="txn-date"
+              className="block text-sm font-medium text-slate-600 mb-1"
+            >
               កាលបរិច្ឆេទ (Date)
             </label>
             <input
@@ -215,7 +295,10 @@ export default function TransactionForm({ transactions, defaults, onSave, onClos
 
           {/* Borrower Name */}
           <div>
-            <label htmlFor="txn-borrower" className="block text-sm font-medium text-slate-600 mb-1">
+            <label
+              htmlFor="txn-borrower"
+              className="block text-sm font-medium text-slate-600 mb-1"
+            >
               ឈ្មោះអ្នកខ្ចី (Borrower Name)
             </label>
             <select
@@ -224,9 +307,9 @@ export default function TransactionForm({ transactions, defaults, onSave, onClos
               onChange={(e) => {
                 if (e.target.value === ADD_BORROWER_OPTION) {
                   setShowAddBorrower(true);
-                  setNewBorrowerName('');
+                  setNewBorrowerName("");
                   setSimilarBorrower(null);
-                  setBorrowerNotice('');
+                  setBorrowerNotice("");
                 } else {
                   selectBorrower(e.target.value);
                 }
@@ -235,18 +318,27 @@ export default function TransactionForm({ transactions, defaults, onSave, onClos
               disabled={saving}
             >
               <option value="">ជ្រើសរើសអ្នកខ្ចី (Select borrower)</option>
-              {createdBorrower && !borrowerNames.some(name => name.toLowerCase() === createdBorrower.toLowerCase()) && (
-                <option value={createdBorrower}>{createdBorrower}</option>
-              )}
+              {createdBorrower &&
+                !borrowerNames.some(
+                  (name) =>
+                    name.toLowerCase() === createdBorrower.toLowerCase(),
+                ) && <option value={createdBorrower}>{createdBorrower}</option>}
               {borrowerNames.map((name) => (
-                <option key={name} value={name}>{name}</option>
+                <option key={name} value={name}>
+                  {name}
+                </option>
               ))}
-              <option value={ADD_BORROWER_OPTION}>+ បន្ថែមអ្នកខ្ចីថ្មី (Add new borrower)</option>
+              <option value={ADD_BORROWER_OPTION}>
+                + បន្ថែមអ្នកខ្ចីថ្មី (Add new borrower)
+              </option>
             </select>
 
             {showAddBorrower && (
               <div className="mt-2 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <label htmlFor="new-borrower-name" className="block text-sm font-medium text-slate-600">
+                <label
+                  htmlFor="new-borrower-name"
+                  className="block text-sm font-medium text-slate-600"
+                >
                   ឈ្មោះអ្នកខ្ចីថ្មី (New borrower name)
                 </label>
                 <input
@@ -256,7 +348,7 @@ export default function TransactionForm({ transactions, defaults, onSave, onClos
                   onChange={(e) => {
                     setNewBorrowerName(e.target.value);
                     setSimilarBorrower(null);
-                    setBorrowerNotice('');
+                    setBorrowerNotice("");
                   }}
                   className="input-field bg-white"
                   autoComplete="off"
@@ -264,13 +356,20 @@ export default function TransactionForm({ transactions, defaults, onSave, onClos
                   placeholder="បញ្ចូលឈ្មោះ..."
                 />
                 {borrowerNotice && (
-                  <p className="text-sm text-amber-700" role="status">{borrowerNotice}</p>
+                  <p className="text-sm text-amber-700" role="status">
+                    {borrowerNotice}
+                  </p>
                 )}
-                {similarBorrower?.type === 'similar' && (
-                  <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800" role="alert">
+                {similarBorrower?.type === "similar" && (
+                  <div
+                    className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
+                    role="alert"
+                  >
                     <p>
-                      ឈ្មោះនេះស្រដៀងនឹង “{similarBorrower.borrower}”។ សូមពិនិត្យមុនបន្ត។
-                      (This name is similar to “{similarBorrower.borrower}”. Please check before continuing.)
+                      ឈ្មោះនេះស្រដៀងនឹង “{similarBorrower.borrower}”។
+                      សូមពិនិត្យមុនបន្ត។ (This name is similar to “
+                      {similarBorrower.borrower}”. Please check before
+                      continuing.)
                     </p>
                     <div className="flex flex-wrap gap-2">
                       <button
@@ -282,7 +381,9 @@ export default function TransactionForm({ transactions, defaults, onSave, onClos
                       </button>
                       <button
                         type="button"
-                        onClick={() => finishBorrowerCreation(similarBorrower.candidate)}
+                        onClick={() =>
+                          finishBorrowerCreation(similarBorrower.candidate)
+                        }
                         className="btn-primary"
                       >
                         បង្កើតដាច់ដោយឡែក (Create separately)
@@ -290,7 +391,7 @@ export default function TransactionForm({ transactions, defaults, onSave, onClos
                     </div>
                   </div>
                 )}
-                {similarBorrower?.type === 'exact' && (
+                {similarBorrower?.type === "exact" && (
                   <button
                     type="button"
                     onClick={() => selectBorrower(similarBorrower.borrower)}
@@ -301,70 +402,118 @@ export default function TransactionForm({ transactions, defaults, onSave, onClos
                 )}
                 {!similarBorrower && (
                   <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={handleCreateBorrower}
-                    className="btn-primary"
-                  >
-                    បន្ថែម (Add)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowAddBorrower(false);
-                      setNewBorrowerName('');
-                      setBorrowerNotice('');
-                    }}
-                    className="btn-outline"
-                  >
-                    បោះបង់ (Cancel)
-                  </button>
+                    <button
+                      type="button"
+                      onClick={handleCreateBorrower}
+                      className="btn-primary"
+                    >
+                      បន្ថែម (Add)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAddBorrower(false);
+                        setNewBorrowerName("");
+                        setBorrowerNotice("");
+                      }}
+                      className="btn-outline"
+                    >
+                      បោះបង់ (Cancel)
+                    </button>
                   </div>
                 )}
               </div>
             )}
           </div>
 
-          {/* Type Toggle */}
+          {/* Type Toggle: Lend, Repay, Refund */}
           <div>
-            <label className="block text-sm font-medium text-slate-600 mb-1">
-              ប្រភេទ (Type)
+            <label className="block text-sm font-semibold text-slate-700 mb-1">
+              ប្រភេទប្រតិបត្តិការ (Transaction Type)
             </label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
-                onClick={() => setType('Lend')}
+                onClick={() => {
+                  setType("Lend");
+                  setOverpaymentWarning("");
+                  setConfirmOverpayment(false);
+                }}
                 disabled={saving}
-                className={`py-4 rounded-xl text-base font-semibold transition-all
-                  ${type === 'Lend'
-                    ? 'bg-primary-600 text-white shadow-md ring-2 ring-primary-300'
-                    : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                className={`py-3 px-1 rounded-xl text-xs sm:text-sm font-bold transition-all text-center
+                  ${
+                    type === "Lend"
+                      ? "bg-amber-600 text-white shadow-md ring-2 ring-amber-300"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                   }`}
-                style={{ minHeight: '56px' }}
+                style={{ minHeight: "52px" }}
               >
-                <span className="block text-lg">💸</span>
+                <span className="block text-base sm:text-lg">💸</span>
                 ឱ្យខ្ចី (Lend)
               </button>
               <button
                 type="button"
-                onClick={() => setType('Repay')}
+                onClick={() => {
+                  setType("Repay");
+                  setOverpaymentWarning("");
+                  setConfirmOverpayment(false);
+                }}
                 disabled={saving}
-                className={`py-4 rounded-xl text-base font-semibold transition-all
-                  ${type === 'Repay'
-                    ? 'bg-success-600 text-white shadow-md ring-2 ring-success-300'
-                    : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                className={`py-3 px-1 rounded-xl text-xs sm:text-sm font-bold transition-all text-center
+                  ${
+                    type === "Repay"
+                      ? "bg-emerald-600 text-white shadow-md ring-2 ring-emerald-300"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                   }`}
-                style={{ minHeight: '56px' }}
+                style={{ minHeight: "52px" }}
               >
-                <span className="block text-lg">💰</span>
+                <span className="block text-base sm:text-lg">💰</span>
                 ទទួលសង (Repay)
               </button>
             </div>
           </div>
 
+          {/* Overpayment Warning Dialog */}
+          {overpaymentWarning && (
+            <div className="rounded-xl border-2 border-amber-400 bg-amber-50 p-4 text-amber-950 space-y-3 shadow-sm">
+              <div className="flex items-start gap-2">
+                <span className="text-xl">⚠️</span>
+                <div className="text-sm font-medium leading-relaxed">
+                  {overpaymentWarning}
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setOverpaymentWarning("")}
+                  className="btn-outline text-xs py-2 px-3 bg-white"
+                >
+                  កែប្រែចំនួន (Edit)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirmOverpayment(true);
+                    setOverpaymentWarning("");
+                    // Trigger submit with confirmation
+                    setTimeout(() => {
+                      document.getElementById("txn-submit-btn")?.click();
+                    }, 50);
+                  }}
+                  className="btn-primary text-xs py-2 px-3 bg-amber-600 hover:bg-amber-700"
+                >
+                  យល់ព្រមបន្ត (Confirm Overpayment)
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Amount */}
           <div>
-            <label htmlFor="txn-amount" className="block text-sm font-medium text-slate-600 mb-1">
+            <label
+              htmlFor="txn-amount"
+              className="block text-sm font-medium text-slate-600 mb-1"
+            >
               ចំនួនទឹកប្រាក់ (Amount)
             </label>
             <div className="relative">
@@ -387,8 +536,12 @@ export default function TransactionForm({ transactions, defaults, onSave, onClos
 
           {/* Note */}
           <div>
-            <label htmlFor="txn-note" className="block text-sm font-medium text-slate-600 mb-1">
-              កំណត់សម្គាល់ (Note) <span className="text-slate-400 font-normal">- ស្រេចចិត្ត</span>
+            <label
+              htmlFor="txn-note"
+              className="block text-sm font-medium text-slate-600 mb-1"
+            >
+              កំណត់សម្គាល់ (Note){" "}
+              <span className="text-slate-400 font-normal">- ស្រេចចិត្ត</span>
             </label>
             <input
               id="txn-note"
@@ -403,10 +556,11 @@ export default function TransactionForm({ transactions, defaults, onSave, onClos
 
           {/* Submit */}
           <button
+            id="txn-submit-btn"
             type="submit"
             disabled={saving}
-            className={`w-full py-4 rounded-xl text-lg font-semibold transition-colors
-              ${type === 'Lend' ? 'btn-primary' : 'btn-success'}
+            className={`w-full py-4 rounded-xl text-lg font-semibold text-white shadow-md transition-colors
+              ${type === "Lend" ? "bg-amber-600 hover:bg-amber-700 active:bg-amber-800" : type === "Refund" ? "bg-blue-600 hover:bg-blue-700 active:bg-blue-800" : "bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800"}
               disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             {saving ? (
@@ -415,7 +569,7 @@ export default function TransactionForm({ transactions, defaults, onSave, onClos
                 កំពុងរក្សាទុក...
               </span>
             ) : (
-              'រក្សាទុក (Save)'
+              "រក្សាទុក (Save)"
             )}
           </button>
         </form>
