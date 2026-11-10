@@ -15,6 +15,7 @@ import TransactionForm from './components/TransactionForm';
 import SyncIndicator from './components/SyncIndicator';
 import { normalizeBorrowerName, todayStr } from './utils';
 
+
 export default function App() {
   const [auth, setAuth] = useState(getCredentials);
   const [transactions, setTransactions] = useState([]);
