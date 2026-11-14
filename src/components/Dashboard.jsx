@@ -1,15 +1,28 @@
 import { useMemo, useState } from 'react';
 import {
   formatMoney,
-  computeTotals,
-  computeBorrowerSummary,
-  computeMonthlyTable,
-  getMonthOptions,
   normalizeBorrowerName,
   todayStr,
-  exportToCsv,
+  normalizeDate,
+  formatDate,
+  isRecordSettled,
+  computeBorrowerSummary,
 } from '../utils';
-import TransactionLog from './TransactionLog';
+import UnifiedTimeline from './UnifiedTimeline';
+import {
+  BanknoteIcon,
+  PackageIcon,
+  PlusIcon,
+  CheckIcon,
+  CheckCircleIcon,
+  CalendarIcon,
+  ArchiveIcon,
+  EyeIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  AlertCircleIcon,
+  XIcon,
+} from './Icons';
 
 const ALL_BORROWERS = '__all_borrowers__';
 
@@ -19,22 +32,21 @@ export default function Dashboard({
   settlements = [],
   onDeleteTransaction,
   onDeleteProduct,
-  onRepaymentShortcut,
-  onOpenForm,
-  onOpenProductForm,
+  onOpenEntryModal,
   onSettleMonth,
   onReopenMonth,
 }) {
   const [selectedBorrower, setSelectedBorrower] = useState(ALL_BORROWERS);
-  const [detailTab, setDetailTab] = useState('loans'); // 'loans' | 'products'
 
-  // Product delete state
-  const [confirmDeleteProduct, setConfirmDeleteProduct] = useState(null);
+  // Collapsible Monthly Archive state (collapsed by default to keep daily screen clean)
+  const [isArchiveOpen, setIsArchiveOpen] = useState(false);
+  const [inspectingArchive, setInspectingArchive] = useState(null);
 
-  // Month settlement modal state
-  const [settleModalData, setSettleModalData] = useState(null);
+  // Settlement modal state
+  const [showSettleModal, setShowSettleModal] = useState(false);
   const [settlePaidAmount, setSettlePaidAmount] = useState('');
   const [settleDate, setSettleDate] = useState(todayStr());
+  const [settleMonthValue, setSettleMonthValue] = useState(todayStr().slice(0, 7));
   const [settleSubmitting, setSettleSubmitting] = useState(false);
 
   // Reopen month modal state
@@ -47,139 +59,162 @@ export default function Dashboard({
     const names = new Map();
     for (const t of transactions) {
       const name = normalizeBorrowerName(t.borrower);
-      if (name && !names.has(name.toLowerCase())) names.set(name.toLowerCase(), name);
+      if (name && !names.has(name.toLowerCase())) {
+        names.set(name.toLowerCase(), name);
+      }
     }
     for (const p of products) {
       const name = normalizeBorrowerName(p.borrower);
-      if (name && !names.has(name.toLowerCase())) names.set(name.toLowerCase(), name);
+      if (name && !names.has(name.toLowerCase())) {
+        names.set(name.toLowerCase(), name);
+      }
     }
     return [...names.values()];
   }, [transactions, products]);
 
-  const activeBorrower = borrowerNames.includes(selectedBorrower) ? selectedBorrower : ALL_BORROWERS;
+  const activeBorrower = borrowerNames.includes(selectedBorrower)
+    ? selectedBorrower
+    : ALL_BORROWERS;
   const isSpecificBorrower = activeBorrower !== ALL_BORROWERS;
+  const targetName = isSpecificBorrower ? activeBorrower : 'អ្នកខ្ចី';
 
-  // Filter transactions for active borrower
+  // Filter transactions and products for selected borrower
   const displayedTransactions = useMemo(
     () =>
       isSpecificBorrower
         ? transactions.filter(
-            (t) => normalizeBorrowerName(t.borrower).toLowerCase() === activeBorrower.toLowerCase(),
+            (t) =>
+              normalizeBorrowerName(t.borrower).toLowerCase() ===
+              activeBorrower.toLowerCase(),
           )
         : transactions,
     [transactions, activeBorrower, isSpecificBorrower],
   );
 
-  // Filter products for active borrower
   const displayedProducts = useMemo(
     () =>
       isSpecificBorrower
         ? products.filter(
-            (p) => normalizeBorrowerName(p.borrower).toLowerCase() === activeBorrower.toLowerCase(),
+            (p) =>
+              normalizeBorrowerName(p.borrower).toLowerCase() ===
+              activeBorrower.toLowerCase(),
           )
         : products,
     [products, activeBorrower, isSpecificBorrower],
   );
 
-  // Filter settlements for active borrower
   const displayedSettlements = useMemo(
     () =>
       isSpecificBorrower
         ? settlements.filter(
-            (s) => normalizeBorrowerName(s.borrower).toLowerCase() === activeBorrower.toLowerCase(),
+            (s) =>
+              normalizeBorrowerName(s.borrower).toLowerCase() ===
+              activeBorrower.toLowerCase(),
           )
         : settlements,
     [settlements, activeBorrower, isSpecificBorrower],
   );
 
-  // Totals computed by one shared function across transactions and products
-  const totals = useMemo(
-    () => computeTotals(displayedTransactions, displayedProducts),
-    [displayedTransactions, displayedProducts],
-  );
+  // ACTIVE (UNSETTLED) RECORDS for the current active period
+  const activeTransactions = useMemo(() => {
+    return displayedTransactions.filter(
+      (t) => t.type === 'Lend' && !isRecordSettled(t, settlements),
+    );
+  }, [displayedTransactions, settlements]);
 
-  const borrowerSummary = useMemo(
-    () => computeBorrowerSummary(transactions, products),
-    [transactions, products],
-  );
+  const activeProducts = useMemo(() => {
+    return displayedProducts.filter((p) => !isRecordSettled(p, settlements));
+  }, [displayedProducts, settlements]);
 
-  const monthlyTable = useMemo(
-    () =>
-      computeMonthlyTable(
-        displayedTransactions,
-        displayedProducts,
-        displayedSettlements,
-        isSpecificBorrower ? activeBorrower : null,
-      ),
-    [displayedTransactions, displayedProducts, displayedSettlements, isSpecificBorrower, activeBorrower],
-  );
+  // Core 2 Metrics: Total Active Lent & Total Active Goods
+  const totalActiveLent = useMemo(() => {
+    return activeTransactions.reduce(
+      (sum, t) => sum + (Number(t.amount) || 0),
+      0,
+    );
+  }, [activeTransactions]);
 
-  const monthOptions = useMemo(
-    () => getMonthOptions(displayedTransactions, displayedProducts),
-    [displayedTransactions, displayedProducts],
-  );
+  const activeLentCount = activeTransactions.length;
 
-  // Open Month Settlement modal
-  const handleOpenSettleMonth = (monthRow) => {
-    const defaultPaid = Math.abs(monthRow.netBalance || monthRow.runningBalance);
-    setSettleModalData({
-      month: monthRow.month,
-      borrower: activeBorrower,
-      lent: monthRow.lent,
-      repaid: monthRow.repaid,
-      products: monthRow.products,
-      refunded: monthRow.refunded,
-      netBalance: monthRow.netBalance,
-      runningBalance: monthRow.runningBalance,
-    });
-    setSettlePaidAmount(String(defaultPaid));
+  const totalActiveGoods = useMemo(() => {
+    return activeProducts.reduce((sum, p) => {
+      const itemTotal =
+        p.total != null && !isNaN(p.total)
+          ? Number(p.total)
+          : Math.round((Number(p.quantity) || 0) * (Number(p.unitPrice) || 0));
+      return sum + itemTotal;
+    }, 0);
+  }, [activeProducts]);
+
+  const activeProductsCount = activeProducts.length;
+
+  // Exact 2-Variable Difference: Total Active Lent - Total Active Goods
+  const difference = totalActiveLent - totalActiveGoods;
+
+  // Active months detected from unsettled records
+  const activeMonths = useMemo(() => {
+    const set = new Set();
+    for (const t of activeTransactions) {
+      const m = normalizeDate(t.date).slice(0, 7);
+      if (m) set.add(m);
+    }
+    for (const p of activeProducts) {
+      const m = normalizeDate(p.date).slice(0, 7);
+      if (m) set.add(m);
+    }
+    const arr = [...set].sort();
+    return arr.length > 0 ? arr : [todayStr().slice(0, 7)];
+  }, [activeTransactions, activeProducts]);
+
+  // Open the Settlement Modal with exact active numbers pre-filled
+  const handleOpenSettleModal = () => {
+    const latestMonth = activeMonths[activeMonths.length - 1] || todayStr().slice(0, 7);
+    setSettleMonthValue(latestMonth);
+    setSettlePaidAmount(String(Math.abs(difference)));
     setSettleDate(todayStr());
+    setShowSettleModal(true);
   };
 
+  // Confirm and Execute Month Settlement
   const handleConfirmSettleMonth = async (e) => {
     e.preventDefault();
-    if (!settleModalData) return;
 
     const paid = Math.round(Number(settlePaidAmount) || 0);
-    const balanceBefore = settleModalData.runningBalance;
+    const balanceBefore = difference;
     const direction =
-      balanceBefore > 0
+      difference > 0
         ? 'borrower_pays_dad'
-        : balanceBefore < 0
+        : difference < 0
         ? 'dad_pays_borrower'
         : 'cleared';
-
-    const carriedOver =
-      direction === 'borrower_pays_dad'
-        ? balanceBefore - paid
-        : direction === 'dad_pays_borrower'
-        ? balanceBefore + paid
-        : 0;
 
     setSettleSubmitting(true);
     try {
       await onSettleMonth({
-        month: settleModalData.month,
-        borrower: settleModalData.borrower,
+        month: settleMonthValue,
+        borrower: isSpecificBorrower ? activeBorrower : '',
+        totalLent: totalActiveLent,
+        totalGoods: totalActiveGoods,
         balanceBefore,
         paid,
         direction,
-        carriedOver,
+        carriedOver: 0,
         date: settleDate,
+        status: 'ទូទាត់រួចរាល់',
       });
-      setSettleModalData(null);
+      setShowSettleModal(false);
     } catch (err) {
-      alert('មិនអាចទូទាត់ខែបានទេ: ' + err.message);
+      alert('មិនអាចទូទាត់បានទេ: ' + err.message);
     } finally {
       setSettleSubmitting(false);
     }
   };
 
-  // Reopen month modal handlers
+  // Reopen Month Handlers
   const handleOpenReopenMonth = (monthRow) => {
     setReopenModalData({
       month: monthRow.month,
-      borrower: activeBorrower,
+      borrower: monthRow.borrower || activeBorrower,
     });
     setReopenTypedName('');
   };
@@ -192,7 +227,7 @@ export default function Dashboard({
       normalizeBorrowerName(reopenTypedName).toLowerCase() !==
       normalizeBorrowerName(reopenModalData.borrower).toLowerCase()
     ) {
-      alert(`សូមវាយឈ្មោះ "${reopenModalData.borrower}" ឱ្យបានត្រឹមត្រូវដើម្បីបញ្ជាក់`);
+      alert(`សូមវាយឈ្មោះ "${reopenModalData.borrower}" ឱ្យបានត្រឹមត្រូវ`);
       return;
     }
 
@@ -203,6 +238,7 @@ export default function Dashboard({
         borrower: reopenModalData.borrower,
       });
       setReopenModalData(null);
+      setInspectingArchive(null);
     } catch (err) {
       alert('មិនអាចបើកខែឡើងវិញបានទេ: ' + err.message);
     } finally {
@@ -210,456 +246,279 @@ export default function Dashboard({
     }
   };
 
-  // Export CSV Handlers
-  const handleExportTransactions = () => {
-    const headers = [
-      { key: 'date', label: 'Date' },
-      { key: 'borrower', label: 'Borrower' },
-      { key: 'type', label: 'Type' },
-      { key: 'amount', label: 'Amount' },
-      { key: 'note', label: 'Note' },
-      { key: 'id', label: 'ID' },
-    ];
-    exportToCsv(`transactions_${todayStr()}`, displayedTransactions, headers);
-  };
+  // Archived settled months summary list
+  const archivedSettlements = useMemo(() => {
+    return displayedSettlements.map((s) => {
+      const m = String(s.month);
+      const b = normalizeBorrowerName(s.borrower).toLowerCase();
 
-  const handleExportProducts = () => {
-    const headers = [
-      { key: 'date', label: 'Date' },
-      { key: 'borrower', label: 'Borrower' },
-      { key: 'item', label: 'Item' },
-      { key: 'quantity', label: 'Quantity' },
-      { key: 'unitPrice', label: 'Unit Price' },
-      { key: 'total', label: 'Total' },
-      { key: 'note', label: 'Note' },
-      { key: 'id', label: 'ID' },
-    ];
-    exportToCsv(`products_${todayStr()}`, displayedProducts, headers);
-  };
+      // Find archived loans in this month
+      const monthLoans = displayedTransactions.filter(
+        (t) =>
+          t.type === 'Lend' &&
+          normalizeDate(t.date).slice(0, 7) === m &&
+          (!b || normalizeBorrowerName(t.borrower).toLowerCase() === b),
+      );
+      const totalLent =
+        s.totalLent != null
+          ? s.totalLent
+          : monthLoans.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+      // Find archived goods in this month
+      const monthGoods = displayedProducts.filter(
+        (p) =>
+          normalizeDate(p.date).slice(0, 7) === m &&
+          (!b || normalizeBorrowerName(p.borrower).toLowerCase() === b),
+      );
+      const totalGoods =
+        s.totalGoods != null
+          ? s.totalGoods
+          : monthGoods.reduce((sum, p) => {
+              const itemTotal =
+                p.total != null && !isNaN(p.total)
+                  ? Number(p.total)
+                  : Math.round((Number(p.quantity) || 0) * (Number(p.unitPrice) || 0));
+              return sum + itemTotal;
+            }, 0);
+
+      return {
+        id: s.id,
+        month: m,
+        borrower: s.borrower,
+        totalLent,
+        totalGoods,
+        paid: s.paid != null ? s.paid : Math.abs(s.balanceBefore || 0),
+        balanceBefore: s.balanceBefore,
+        direction: s.direction,
+        date: s.date,
+        status: s.status || 'ទូទាត់រួចរាល់',
+        records: {
+          loans: monthLoans,
+          goods: monthGoods,
+        },
+      };
+    });
+  }, [displayedSettlements, displayedTransactions, displayedProducts]);
+
+  // Overall summary for all borrowers
+  const borrowerSummary = useMemo(
+    () => computeBorrowerSummary(transactions, products),
+    [transactions, products],
+  );
 
   return (
-    <div className="space-y-6 pb-20">
-      {/* 1. BORROWER SELECTOR & ACTIONS BAR */}
-      <section className="card border-primary-100 shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <div className="space-y-6">
+      {/* 1. PERSON SELECTOR & UNIFIED ACTION BAR */}
+      <section className="card p-4 sm:p-5 border-slate-200 shadow-sm rounded-3xl bg-white">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
           <div className="flex-1">
             <label
-              htmlFor="summary-borrower"
-              className="mb-1 block text-sm font-semibold text-slate-700"
+              htmlFor="person-selector"
+              className="mb-1.5 block text-base sm:text-lg font-black text-slate-800"
             >
-              ជ្រើសរើសមើលតាមអ្នកខ្ចី (Select Borrower Profile)
+              ជ្រើសរើសឈ្មោះ
             </label>
             <select
-              id="summary-borrower"
+              id="person-selector"
               value={activeBorrower}
               onChange={(e) => setSelectedBorrower(e.target.value)}
-              className="input-field bg-white font-medium text-slate-800"
+              className="input-field text-base sm:text-lg font-bold text-slate-800 bg-white min-h-[48px]"
             >
-              <option value={ALL_BORROWERS}>អ្នកខ្ចីទាំងអស់ (All borrowers)</option>
+              <option value={ALL_BORROWERS}>បង្ហាញទាំងអស់</option>
               {borrowerNames.map((name) => (
-                <option key={name} value={name}>{name}</option>
+                <option key={name} value={name}>
+                  {name}
+                </option>
               ))}
             </select>
-            <p className="mt-1.5 text-xs text-slate-500">
-              {!isSpecificBorrower
-                ? 'បង្ហាញទិន្នន័យរួមសម្រាប់អ្នកខ្ចីទាំងអស់ (Showing overall combined data)'
-                : `កំពុងមើលគណនី និងការទូទាត់របស់ ${activeBorrower}`}
-            </p>
           </div>
 
-          {/* Quick Actions */}
-          <div className="flex flex-wrap items-center gap-2 pt-1 sm:pt-4">
-            {onOpenProductForm && (
-              <button
-                type="button"
-                onClick={() => onOpenProductForm(isSpecificBorrower ? activeBorrower : '')}
-                className="btn-success text-xs sm:text-sm py-2 px-3 font-bold shadow-sm flex items-center gap-1.5"
-                title="កត់ត្រាផលិតផលដែលបានទទួលពីអ្នកខ្ចី"
-              >
-                <span>📦</span>
-                <span>+ កត់ត្រាទំនិញ</span>
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={handleExportTransactions}
-              className="btn-outline text-xs py-2 px-2.5 font-semibold bg-white hover:bg-slate-50"
-              title="ទាញយកទិន្នន័យកម្ចីជា CSV"
-            >
-              📥 CSV កម្ចី
-            </button>
-            <button
-              type="button"
-              onClick={handleExportProducts}
-              className="btn-outline text-xs py-2 px-2.5 font-semibold bg-white hover:bg-slate-50"
-              title="ទាញយកទិន្នន័យទំនិញជា CSV"
-            >
-              📥 CSV ទំនិញ
-            </button>
-          </div>
+          {/* ONE large primary action button */}
+          <button
+            type="button"
+            onClick={() =>
+              onOpenEntryModal(isSpecificBorrower ? activeBorrower : '', 'lend')
+            }
+            className="btn-primary min-h-[48px] px-6 text-base sm:text-lg font-black shadow-md hover:shadow-lg flex items-center justify-center gap-2 rounded-2xl"
+          >
+            <PlusIcon className="w-5 h-5" />
+            <span>កត់ត្រាថ្មី</span>
+          </button>
         </div>
       </section>
 
-      {/* 2. TOP SUMMARY CARDS (Total Lent, Repaid/Refunded, Products, HEADLINE SETTLEMENT) */}
-      <section className="space-y-3">
-        {/* PROMINENT HEADLINE SETTLEMENT CARD */}
-        <div className={`rounded-2xl border-2 p-5 sm:p-6 shadow-md transition-all ${totals.status.bannerClass}`}>
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-black/10 pb-4">
+      {/* 2. SUMMARY DASHBOARD LAYOUT (STRICT 1-OVER-2 GRID) */}
+      <section className="space-y-4">
+        {/* TOP ROW: Full-Width Card (Active Balance) */}
+        <div
+          className={`rounded-3xl border-2 p-5 sm:p-7 shadow-md transition-all ${
+            difference > 0
+              ? 'bg-amber-50/95 border-amber-400 text-amber-950'
+              : difference < 0
+              ? 'bg-blue-50/95 border-blue-400 text-blue-950'
+              : 'bg-emerald-50/95 border-emerald-400 text-emerald-950'
+          }`}
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-black/10 pb-5">
             <div>
-              <div className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-black uppercase tracking-wide border shadow-sm">
-                <span>{totals.status.label}</span>
-              </div>
-              <h2 className="mt-2 text-xl sm:text-2xl font-black">
-                សមតុល្យទូទាត់សរុប (Settlement Balance)
-              </h2>
-              <p className="text-xs font-semibold opacity-80 mt-0.5">
-                រូបមន្ត: ឱ្យខ្ចី ({formatMoney(totals.totalLent)}) − សង ({formatMoney(totals.totalRepaid)}) − ទំនិញ ({formatMoney(totals.totalProducts)}) + សងត្រឡប់ ({formatMoney(totals.totalRefunded)})
-              </p>
-            </div>
-
-            {/* Headline Amount Display */}
-            <div className="text-left sm:text-right">
-              <span className="text-xs font-bold uppercase block opacity-75">
-                ទឹកប្រាក់ជាក់ស្តែង
-              </span>
-              <span className="text-3xl sm:text-4xl lg:text-5xl font-black tabular-nums tracking-tight">
-                {formatMoney(Math.abs(totals.balance))}
-              </span>
-            </div>
-          </div>
-
-          {/* Plain-Language Status Guidance */}
-          <div className="mt-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sm font-bold">
-            <div className="flex-1">
-              {totals.balance > 0 && (
-                <p>
-                  👉 {isSpecificBorrower ? <strong>{activeBorrower}</strong> : 'អ្នកខ្ចី'}{' '}
-                  នៅសល់ត្រូវទូទាត់សងលោកប៉ា <span className="underline underline-offset-4">{formatMoney(totals.balance)}</span>។
-                </p>
-              )}
-              {totals.balance < 0 && (
-                <p>
-                  👉 តម្លៃទំនិញលើសបំណុលកម្ចី! លោកប៉ាត្រូវបើកលុយទូទាត់ជូន{' '}
-                  {isSpecificBorrower ? <strong>{activeBorrower}</strong> : 'អ្នកខ្ចី'}{' '}
-                  វិញចំនួន <span className="underline underline-offset-4">{formatMoney(Math.abs(totals.balance))}</span>។
-                </p>
-              )}
-              {totals.balance === 0 && (
-                <p>
-                  👉 បំណុលកម្ចី និងទំនិញបានកាត់កងស្មើគ្នា 0៛ មិនមានអ្នកណាជំពាក់អ្នកណាឡើយ។
-                </p>
-              )}
-            </div>
-
-            {isSpecificBorrower && totals.balance > 0 && (
-              <button
-                type="button"
-                onClick={() => onRepaymentShortcut(activeBorrower, totals.balance)}
-                className="btn-primary text-xs py-2.5 px-4 font-bold shrink-0 shadow"
+              {/* Status Badge */}
+              <div
+                className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1 text-xs sm:text-sm font-black border shadow-sm ${
+                  difference > 0
+                    ? 'bg-amber-100 text-amber-900 border-amber-300'
+                    : difference < 0
+                    ? 'bg-blue-100 text-blue-900 border-blue-300'
+                    : 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                }`}
               >
-                កត់ត្រាការសង {formatMoney(totals.balance)}
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* 3 Metric Sub-Cards: Total Lent, Total Repaid/Refunded, Product Value */}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {/* Card 1: Total Lent */}
-          <div className="card border-l-4 border-l-amber-500 bg-white shadow-sm flex flex-col justify-between">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
-                ប្រាក់បានឱ្យខ្ចីសរុប (Total Lent)
-              </p>
-              <p className="text-xl sm:text-2xl font-black text-amber-700 tabular-nums">
-                {formatMoney(totals.totalLent)}
-              </p>
-            </div>
-            <p className="mt-2 text-[11px] text-slate-400 border-t border-slate-100 pt-1.5">
-              ទឹកប្រាក់សាច់ប្រាក់បានឱ្យខ្ចី
-            </p>
-          </div>
-
-          {/* Card 2: Total Repaid / Refunded */}
-          <div className="card border-l-4 border-l-emerald-500 bg-white shadow-sm flex flex-col justify-between">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
-                ទទួលសង / សងត្រឡប់ (Repaid / Refunded)
-              </p>
-              <p className="text-xl sm:text-2xl font-black text-emerald-700 tabular-nums">
-                {formatMoney(totals.totalRepaid)}
-              </p>
-            </div>
-            <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500 border-t border-slate-100 pt-1.5">
-              <span>សង: <strong>{formatMoney(totals.totalRepaid)}</strong></span>
-              <span>សងត្រឡប់: <strong className="text-blue-600">{formatMoney(totals.totalRefunded)}</strong></span>
-            </div>
-          </div>
-
-          {/* Card 3: Total Product Value */}
-          <div className="card border-l-4 border-l-blue-500 bg-white shadow-sm flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
-                  តម្លៃទំនិញសរុប (Product Value)
-                </p>
-                <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
-                  {displayedProducts.length} មុខ
+                {difference > 0 && <BanknoteIcon className="w-4 h-4" />}
+                {difference < 0 && <PackageIcon className="w-4 h-4" />}
+                {difference === 0 && <CheckIcon className="w-4 h-4" />}
+                <span>
+                  {difference > 0
+                    ? `${targetName} នៅជំពាក់ប៉ា`
+                    : difference < 0
+                    ? `ប៉ាត្រូវបង់លុយឱ្យ ${targetName} បន្ថែម`
+                    : 'ទូទាត់រួចរាល់'}
                 </span>
               </div>
-              <p className="text-xl sm:text-2xl font-black text-blue-700 tabular-nums">
-                {formatMoney(totals.totalProducts)}
+
+              {/* Title */}
+              <h2 className="mt-2.5 text-xl sm:text-2xl font-black">
+                {difference > 0
+                  ? `លុយនៅសល់ត្រូវទារពី ${targetName}`
+                  : difference < 0
+                  ? `លុយប៉ាត្រូវទូទាត់ឱ្យ ${targetName}`
+                  : 'សមតុល្យនៅសល់'}
+              </h2>
+            </div>
+
+            {/* Large Bold KHR Amount */}
+            <div className="text-left sm:text-right">
+              <span className="text-3xl sm:text-4xl lg:text-5xl font-black tabular-nums tracking-tight">
+                {formatMoney(Math.abs(difference))}
+              </span>
+            </div>
+          </div>
+
+          {/* Plain Khmer Explanation & Secondary Settlement Button */}
+          <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-base sm:text-lg font-bold">
+            <div className="flex-1">
+              {difference > 0 && (
+                <p>
+                  ថ្លៃទំនិញតិចជាងលុយខ្ចី! {targetName} នៅជំពាក់លុយប៉ាចំនួន{' '}
+                  <span className="underline underline-offset-4 font-black">
+                    {formatMoney(difference)}
+                  </span>
+                </p>
+              )}
+              {difference < 0 && (
+                <p>
+                  ថ្លៃទំនិញលើសលុយខ្ចី! ប៉ាត្រូវបើកលុយឱ្យ {targetName} ចំនួន{' '}
+                  <span className="underline underline-offset-4 font-black">
+                    {formatMoney(Math.abs(difference))}
+                  </span>
+                </p>
+              )}
+              {difference === 0 && (
+                <p>បានទូទាត់រួចរាល់ស្មើគ្នា មិនមានជំពាក់គ្នាទេ</p>
+              )}
+            </div>
+
+            {/* Secondary Button: End-of-Month Settlement (visible only when active balance !== 0) */}
+            {difference !== 0 && (
+              <button
+                type="button"
+                onClick={handleOpenSettleModal}
+                className="btn-outline min-h-[44px] px-4 py-2 font-black text-sm sm:text-base flex items-center gap-2 rounded-2xl bg-white shadow-sm border-slate-300 hover:bg-slate-50 transition-all text-slate-800 shrink-0"
+              >
+                <CheckCircleIcon className="w-5 h-5 text-emerald-600" />
+                <span>ទូទាត់បិទបញ្ជីខែនេះ</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* BOTTOM ROW: 2 Equal Columns (50% / 50% Grid) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Left Column (50% width): Total Active Lent */}
+          <div className="card border-l-4 border-l-amber-500 bg-white shadow-sm p-5 rounded-3xl flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-1.5 text-slate-700">
+                <BanknoteIcon className="w-5 h-5 text-amber-600" />
+                <p className="text-base sm:text-lg font-black text-slate-800">
+                  លុយប៉ាឱ្យខ្ចីសរុប
+                </p>
+              </div>
+              <p className="text-2xl sm:text-3xl font-black text-amber-700 tabular-nums">
+                {formatMoney(totalActiveLent)}
               </p>
             </div>
-            <p className="mt-2 text-[11px] text-slate-400 border-t border-slate-100 pt-1.5">
-              ទំនិញបានកាត់កងបំណុល
+            <p className="mt-3 text-xs sm:text-sm font-bold text-slate-500 border-t border-slate-100 pt-2">
+              សរុប {activeLentCount} លើក
+            </p>
+          </div>
+
+          {/* Right Column (50% width): Total Active Goods */}
+          <div className="card border-l-4 border-l-emerald-500 bg-white shadow-sm p-5 rounded-3xl flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-1.5 text-slate-700">
+                <PackageIcon className="w-5 h-5 text-emerald-600" />
+                <p className="text-base sm:text-lg font-black text-slate-800">
+                  សរុបថ្លៃទំនិញយកចូល
+                </p>
+              </div>
+              <p className="text-2xl sm:text-3xl font-black text-emerald-700 tabular-nums">
+                {formatMoney(totalActiveGoods)}
+              </p>
+            </div>
+            <p className="mt-3 text-xs sm:text-sm font-bold text-slate-500 border-t border-slate-100 pt-2">
+              សរុប {activeProductsCount} លើក
             </p>
           </div>
         </div>
       </section>
 
-      {/* 3. TABS: LOANS vs PRODUCTS (When a borrower is selected) */}
-      {isSpecificBorrower ? (
-        <div className="space-y-4">
-          <div className="flex border-b border-slate-200">
-            <button
-              type="button"
-              onClick={() => setDetailTab('loans')}
-              className={`flex-1 py-3 text-center text-sm font-bold border-b-2 transition-colors ${
-                detailTab === 'loans'
-                  ? 'border-primary-600 text-primary-700 bg-primary-50/40'
-                  : 'border-transparent text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              ប្រតិបត្តិការកម្ចី (Loans & Payments - {displayedTransactions.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setDetailTab('products')}
-              className={`flex-1 py-3 text-center text-sm font-bold border-b-2 transition-colors ${
-                detailTab === 'products'
-                  ? 'border-emerald-600 text-emerald-700 bg-emerald-50/40'
-                  : 'border-transparent text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              បញ្ជីទំនិញបានទទួល (Products Supplied - {displayedProducts.length})
-            </button>
-          </div>
+      {/* 3. ACTIVE DAILY TIMELINE (Focused ONLY on Current Unsettled Month) */}
+      <section>
+        <UnifiedTimeline
+          transactions={activeTransactions}
+          products={activeProducts}
+          isSpecificBorrower={isSpecificBorrower}
+          activeBorrower={activeBorrower}
+          onDeleteTransaction={onDeleteTransaction}
+          onDeleteProduct={onDeleteProduct}
+        />
+      </section>
 
-          {detailTab === 'products' ? (
-            /* PRODUCTS TAB */
-            <div className="card space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-base font-bold text-slate-800">
-                  បញ្ជីទំនិញដែលបានទទួលពី {activeBorrower} (Products List)
-                </h3>
-                {onOpenProductForm && (
-                  <button
-                    type="button"
-                    onClick={() => onOpenProductForm(activeBorrower)}
-                    className="btn-success text-xs py-2 px-3 font-semibold"
-                  >
-                    + កត់ត្រាទំនិញថ្មី
-                  </button>
-                )}
-              </div>
-
-              {displayedProducts.length === 0 ? (
-                <div className="py-8 text-center text-slate-400 text-sm">
-                  <p>មិនទាន់មានការកត់ត្រាទំនិញពី {activeBorrower} នៅឡើយទេ</p>
-                </div>
-              ) : (
-                <>
-                  {/* Mobile Cards */}
-                  <div className="space-y-2.5 sm:hidden">
-                    {displayedProducts.map((p) => {
-                      const itemTotal =
-                        p.total != null
-                          ? Number(p.total)
-                          : Math.round((Number(p.quantity) || 0) * (Number(p.unitPrice) || 0));
-                      return (
-                        <div key={p.id} className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <span className="font-bold text-slate-800 text-sm">
-                                {p.item || 'ទំនិញទូទៅ'}
-                              </span>
-                              <span className="block text-xs text-slate-500 mt-0.5">{p.date}</span>
-                            </div>
-                            <span className="font-black text-sm text-emerald-700 tabular-nums">
-                              {formatMoney(itemTotal)}
-                            </span>
-                          </div>
-                          <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-600">
-                            <div>
-                              <span>បរិមាណ: </span>
-                              <strong className="text-slate-800">{p.quantity}</strong>
-                            </div>
-                            <div>
-                              <span>តម្លៃឯកតា: </span>
-                              <strong className="text-slate-800">{formatMoney(p.unitPrice)}</strong>
-                            </div>
-                            {p.note && (
-                              <div className="col-span-2 text-slate-500 italic">
-                                កំណត់សម្គាល់: {p.note}
-                              </div>
-                            )}
-                          </div>
-                          <div className="mt-2 pt-2 border-t border-slate-200 flex justify-end">
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDeleteProduct(p.id)}
-                              className="text-xs text-red-600 hover:text-red-800 font-semibold py-1 px-2 rounded hover:bg-red-50"
-                            >
-                              លុប (Delete)
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Desktop Table */}
-                  <div className="hidden overflow-x-auto sm:block">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-slate-200 text-slate-500 text-xs">
-                          <th className="py-2.5 text-left">កាលបរិច្ឆេទ (Date)</th>
-                          <th className="py-2.5 text-left">មុខទំនិញ (Item)</th>
-                          <th className="py-2.5 text-right">បរិមាណ (Quantity)</th>
-                          <th className="py-2.5 text-right">តម្លៃឯកតា (Unit Price)</th>
-                          <th className="py-2.5 text-right">សរុប (Total)</th>
-                          <th className="py-2.5 text-left">កំណត់សម្គាល់ (Note)</th>
-                          <th className="py-2.5 w-12"></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {displayedProducts.map((p) => {
-                          const itemTotal =
-                            p.total != null
-                              ? Number(p.total)
-                              : Math.round((Number(p.quantity) || 0) * (Number(p.unitPrice) || 0));
-                          return (
-                            <tr key={p.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50">
-                              <td className="py-2.5 font-medium text-slate-700">{p.date}</td>
-                              <td className="py-2.5 font-bold text-slate-800">{p.item || '—'}</td>
-                              <td className="py-2.5 text-right font-semibold text-slate-800 tabular-nums">
-                                {p.quantity}
-                              </td>
-                              <td className="py-2.5 text-right tabular-nums text-slate-600">
-                                {formatMoney(p.unitPrice)}
-                              </td>
-                              <td className="py-2.5 text-right font-black text-emerald-700 tabular-nums">
-                                {formatMoney(itemTotal)}
-                              </td>
-                              <td className="py-2.5 text-slate-500 text-xs">{p.note || '—'}</td>
-                              <td className="py-2.5 text-right">
-                                <button
-                                  type="button"
-                                  onClick={() => setConfirmDeleteProduct(p.id)}
-                                  className="text-slate-400 hover:text-red-600 min-h-[36px] min-w-[36px] inline-flex items-center justify-center rounded"
-                                  title="លុបទំនិញ"
-                                >
-                                  🗑️
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                      <tfoot>
-                        <tr className="border-t-2 border-slate-200 font-bold">
-                          <td colSpan="4" className="py-3 text-right text-slate-700">
-                            តម្លៃសរុប (Total Value):
-                          </td>
-                          <td className="py-3 text-right text-emerald-700 text-base tabular-nums">
-                            {formatMoney(totals.totalProducts)}
-                          </td>
-                          <td colSpan="2"></td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                </>
-              )}
-            </div>
-          ) : (
-            /* LOAN TRANSACTIONS */
-            <TransactionLog
-              transactions={displayedTransactions}
-              monthOptions={monthOptions}
-              onDelete={onDeleteTransaction}
-            />
-          )}
-        </div>
-      ) : (
-        /* ALL BORROWERS SUMMARY TABLE */
-        <div className="card">
-          <h2 className="text-base font-bold text-slate-800 mb-3">
-            សង្ខេបអ្នកខ្ចីទាំងអស់ និងសមតុល្យទូទាត់ (All Borrowers Settlement Summary)
+      {/* 4. ALL BORROWERS SUMMARY (When all borrowers viewed) */}
+      {!isSpecificBorrower && borrowerSummary.length > 0 && (
+        <section className="card p-5 sm:p-6 rounded-3xl bg-white shadow-sm border border-slate-100 space-y-3">
+          <h2 className="text-base sm:text-lg font-black text-slate-800">
+            សង្ខេបអ្នកខ្ចីទាំងអស់
           </h2>
 
-          <div className="space-y-3 md:hidden">
-            {borrowerSummary.map((b) => (
-              <div key={b.borrower} className="rounded-xl border border-slate-200 bg-slate-50/80 p-3.5 space-y-2">
-                <div className="flex items-start justify-between gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedBorrower(b.borrower)}
-                    className="text-left font-bold text-slate-800 hover:text-primary-600 underline"
-                  >
-                    {b.borrower}
-                  </button>
-                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold border ${b.statusInfo.badgeClass}`}>
-                    {b.statusInfo.shortLabel}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <span className="text-slate-500">ឱ្យខ្ចីសរុប:</span>
-                    <p className="font-semibold text-slate-800 tabular-nums">{formatMoney(b.totalLent)}</p>
-                  </div>
-                  <div>
-                    <span className="text-slate-500">ទទួលសង:</span>
-                    <p className="font-semibold text-emerald-700 tabular-nums">{formatMoney(b.totalRepaid)}</p>
-                  </div>
-                  <div>
-                    <span className="text-slate-500">ទំនិញបានទទួល:</span>
-                    <p className="font-semibold text-blue-700 tabular-nums">{formatMoney(b.totalProducts)}</p>
-                  </div>
-                  <div>
-                    <span className="text-slate-500">សងត្រឡប់:</span>
-                    <p className="font-semibold text-blue-600 tabular-nums">{formatMoney(b.totalRefunded || 0)}</p>
-                  </div>
-                  <div className="col-span-2 pt-2 border-t border-slate-200 flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-700">សមតុល្យទូទាត់:</span>
-                    <span className="text-sm font-black text-slate-900 tabular-nums">
-                      {formatMoney(Math.abs(b.balance))}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="hidden overflow-x-auto md:block">
-            <table className="w-full text-sm min-w-[700px]">
+          {/* Desktop Table */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-slate-500 text-xs">
-                  <th className="text-left py-2.5 font-semibold">ឈ្មោះអ្នកខ្ចី</th>
-                  <th className="text-right py-2.5 font-semibold">ឱ្យខ្ចី (Lent)</th>
-                  <th className="text-right py-2.5 font-semibold">ទទួលសង (Repaid)</th>
-                  <th className="text-right py-2.5 font-semibold">ទំនិញ (Products)</th>
-                  <th className="text-right py-2.5 font-semibold">សងត្រឡប់ (Refund)</th>
-                  <th className="text-right py-2.5 font-black text-slate-900">សមតុល្យទូទាត់</th>
-                  <th className="text-center py-2.5 font-semibold">ស្ថានភាព</th>
+                  <th className="text-left py-2.5 font-bold">ឈ្មោះអ្នកខ្ចី</th>
+                  <th className="text-right py-2.5 font-bold">ឱ្យខ្ចីសរុប</th>
+                  <th className="text-right py-2.5 font-bold">ទំនិញសរុប</th>
+                  <th className="text-right py-2.5 font-black text-slate-900">
+                    សមតុល្យទូទាត់
+                  </th>
+                  <th className="text-center py-2.5 font-bold">ស្ថានភាព</th>
                 </tr>
               </thead>
               <tbody>
                 {borrowerSummary.map((b) => (
-                  <tr key={b.borrower} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50">
-                    <td className="py-3 font-bold text-slate-800">
+                  <tr
+                    key={b.borrower}
+                    className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50"
+                  >
+                    <td className="py-3 font-bold text-slate-900">
                       <button
                         type="button"
                         onClick={() => setSelectedBorrower(b.borrower)}
@@ -668,14 +527,24 @@ export default function Dashboard({
                         {b.borrower}
                       </button>
                     </td>
-                    <td className="py-3 text-right tabular-nums text-slate-700">{formatMoney(b.totalLent)}</td>
-                    <td className="py-3 text-right tabular-nums text-emerald-600">{formatMoney(b.totalRepaid)}</td>
-                    <td className="py-3 text-right tabular-nums text-blue-700 font-semibold">{formatMoney(b.totalProducts)}</td>
-                    <td className="py-3 text-right tabular-nums text-blue-600">{formatMoney(b.totalRefunded || 0)}</td>
-                    <td className="py-3 text-right tabular-nums font-black text-slate-900">{formatMoney(Math.abs(b.balance))}</td>
+                    <td className="py-3 text-right tabular-nums text-amber-700 font-bold">
+                      {formatMoney(b.totalLent)}
+                    </td>
+                    <td className="py-3 text-right tabular-nums text-emerald-700 font-bold">
+                      {formatMoney(b.totalProducts)}
+                    </td>
+                    <td className="py-3 text-right tabular-nums font-black text-slate-900">
+                      {formatMoney(Math.abs(b.balance))}
+                    </td>
                     <td className="py-3 text-center">
-                      <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold border ${b.statusInfo.badgeClass}`}>
-                        {b.statusInfo.shortLabel}
+                      <span
+                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold border ${b.statusInfo.badgeClass}`}
+                      >
+                        {b.balance > 0
+                          ? 'អ្នកខ្ចីជំពាក់'
+                          : b.balance < 0
+                          ? 'ប៉ាត្រូវសងវិញ'
+                          : 'ទូទាត់រួច'}
                       </span>
                     </td>
                   </tr>
@@ -683,252 +552,247 @@ export default function Dashboard({
               </tbody>
             </table>
           </div>
-        </div>
+        </section>
       )}
 
-      {/* 4. EXPANDED MONTHLY TABLE WITH RUNNING BALANCE & SETTLEMENT */}
-      <section className="card space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div>
-            <h2 className="text-base font-bold text-slate-800">
-              តារាងប្រចាំខែ (Monthly Table: Lent, Repaid, Products, Refunded, Net & Running Balance)
-            </h2>
-            <p className="text-xs text-slate-500">
-              {isSpecificBorrower ? `ទិន្នន័យសម្រាប់ ${activeBorrower}` : 'ទិន្នន័យសរុបរាល់ខែ'}
-            </p>
-          </div>
-        </div>
-
-        {/* Mobile View */}
-        <div className="space-y-3 md:hidden">
-          {monthlyTable.map((m) => (
-            <div key={m.month} className="rounded-xl border border-slate-200 bg-slate-50/80 p-3.5 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-slate-800 text-sm">{m.month}</span>
-                <span
-                  className={`rounded-full px-2.5 py-0.5 text-xs font-bold border ${
-                    m.isSettled
-                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                      : 'bg-amber-50 text-amber-800 border-amber-300'
-                  }`}
-                >
-                  {m.statusKhmer}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div>
-                  <span className="text-slate-500">ឱ្យខ្ចី (Lent):</span>
-                  <p className="font-semibold text-slate-700 tabular-nums">{formatMoney(m.lent)}</p>
-                </div>
-                <div>
-                  <span className="text-slate-500">ទទួលសង (Repaid):</span>
-                  <p className="font-semibold text-emerald-600 tabular-nums">{formatMoney(m.repaid)}</p>
-                </div>
-                <div>
-                  <span className="text-slate-500">ទំនិញ (Products):</span>
-                  <p className="font-semibold text-blue-600 tabular-nums">{formatMoney(m.products)}</p>
-                </div>
-                <div>
-                  <span className="text-slate-500">សងត្រឡប់ (Refunded):</span>
-                  <p className="font-semibold text-blue-600 tabular-nums">{formatMoney(m.refunded)}</p>
-                </div>
-                <div className="pt-2 border-t border-slate-200">
-                  <span className="text-slate-500">សមតុល្យខែ (Net Month):</span>
-                  <p className="font-bold text-slate-900 tabular-nums">{formatMoney(m.netBalance)}</p>
-                </div>
-                <div className="pt-2 border-t border-slate-200">
-                  <span className="text-slate-500">សមតុល្យបន្ត (Running):</span>
-                  <p className="font-black text-primary-700 tabular-nums">{formatMoney(m.runningBalance)}</p>
-                </div>
-              </div>
-
-              {isSpecificBorrower && (
-                <div className="pt-2 border-t border-slate-200 flex justify-end gap-2">
-                  {!m.isSettled ? (
-                    <button
-                      type="button"
-                      onClick={() => handleOpenSettleMonth(m)}
-                      className="btn-primary text-xs py-1.5 px-3 font-semibold"
-                    >
-                      ទូទាត់ខែ (Settle month)
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => handleOpenReopenMonth(m)}
-                      className="btn-outline text-xs py-1.5 px-3 font-semibold text-amber-700 border-amber-300 hover:bg-amber-50"
-                    >
-                      បើកខែឡើងវិញ (Reopen month)
-                    </button>
-                  )}
-                </div>
-              )}
+      {/* 5. CLEAN MONTHLY ARCHIVE VIEW (Collapsible Bottom Section) */}
+      <section className="card p-5 sm:p-6 rounded-3xl bg-white shadow-sm border border-slate-200 space-y-4">
+        {/* Collapsible Header */}
+        <button
+          type="button"
+          onClick={() => setIsArchiveOpen((prev) => !prev)}
+          className="w-full flex items-center justify-between text-left group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-slate-100 text-slate-700 flex items-center justify-center">
+              <ArchiveIcon className="w-5 h-5 text-slate-600" />
             </div>
-          ))}
-        </div>
+            <div>
+              <h2 className="text-base sm:text-lg font-black text-slate-800 flex items-center gap-2">
+                <span>ប្រវត្តិទូទាត់ប្រចាំខែ</span>
+                <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                  {archivedSettlements.length} ខែ
+                </span>
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-500">
+                បញ្ជីខែដែលបានទូទាត់រួចរាល់ (ប័ណ្ណសារ)
+              </p>
+            </div>
+          </div>
 
-        {/* Desktop View */}
-        <div className="hidden overflow-x-auto md:block">
-          <table className="w-full text-sm min-w-[760px]">
-            <thead>
-              <tr className="border-b border-slate-200 text-slate-500 text-xs">
-                <th className="py-2.5 text-left font-semibold">ខែ (Month)</th>
-                <th className="py-2.5 text-right font-semibold">ឱ្យខ្ចី (Lent)</th>
-                <th className="py-2.5 text-right font-semibold">ទទួលសង (Repaid)</th>
-                <th className="py-2.5 text-right font-semibold">ទំនិញ (Products)</th>
-                <th className="py-2.5 text-right font-semibold">សងត្រឡប់ (Refunded)</th>
-                <th className="py-2.5 text-right font-bold text-slate-800">សមតុល្យខែ (Net)</th>
-                <th className="py-2.5 text-right font-black text-primary-700">សមតុល្យបន្ត (Running)</th>
-                <th className="py-2.5 text-center font-semibold">ស្ថានភាព</th>
-                {isSpecificBorrower && <th className="py-2.5 text-right font-semibold">សកម្មភាព</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {monthlyTable.map((m) => (
-                <tr key={m.month} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50">
-                  <td className="py-3 font-bold text-slate-800">{m.month}</td>
-                  <td className="py-3 text-right tabular-nums text-slate-700">{formatMoney(m.lent)}</td>
-                  <td className="py-3 text-right tabular-nums text-emerald-600">{formatMoney(m.repaid)}</td>
-                  <td className="py-3 text-right tabular-nums text-blue-600">{formatMoney(m.products)}</td>
-                  <td className="py-3 text-right tabular-nums text-blue-600">{formatMoney(m.refunded)}</td>
-                  <td className="py-3 text-right tabular-nums font-bold text-slate-900">{formatMoney(m.netBalance)}</td>
-                  <td className="py-3 text-right tabular-nums font-black text-primary-700">{formatMoney(m.runningBalance)}</td>
-                  <td className="py-3 text-center">
-                    <span
-                      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold border ${
-                        m.isSettled
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                          : 'bg-amber-50 text-amber-800 border-amber-300'
-                      }`}
-                    >
-                      {m.statusKhmer}
-                    </span>
-                  </td>
-                  {isSpecificBorrower && (
-                    <td className="py-3 text-right">
-                      {!m.isSettled ? (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenSettleMonth(m)}
-                          className="btn-primary text-xs py-1 px-2.5 font-bold"
-                        >
-                          ទូទាត់ខែ
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenReopenMonth(m)}
-                          className="text-xs text-amber-700 hover:text-amber-900 font-bold underline py-1 px-2"
-                        >
-                          បើកឡើងវិញ
-                        </button>
+          <div className="text-slate-400 group-hover:text-slate-700 transition-colors">
+            {isArchiveOpen ? (
+              <ChevronUpIcon className="w-6 h-6" />
+            ) : (
+              <ChevronDownIcon className="w-6 h-6" />
+            )}
+          </div>
+        </button>
+
+        {/* Collapsible Content */}
+        {isArchiveOpen && (
+          <div className="pt-3 border-t border-slate-100 space-y-3">
+            {archivedSettlements.length === 0 ? (
+              <div className="py-8 text-center text-slate-400 text-sm font-bold">
+                មិនទាន់មានប្រវត្តិទូទាត់បិទបញ្ជីខែនៅឡើយទេ
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-slate-500 text-xs font-bold">
+                      <th className="py-2.5 text-left">ខែ</th>
+                      {!isSpecificBorrower && (
+                        <th className="py-2.5 text-left">ឈ្មោះ</th>
                       )}
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                      <th className="py-2.5 text-right">ឱ្យខ្ចីសរុប</th>
+                      <th className="py-2.5 text-right">តម្លៃទំនិញសរុប</th>
+                      <th className="py-2.5 text-right">ទឹកប្រាក់ទូទាត់</th>
+                      <th className="py-2.5 text-center">ស្ថានភាព</th>
+                      <th className="py-2.5 text-right">សកម្មភាព</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {archivedSettlements.map((arch) => (
+                      <tr
+                        key={arch.id || `${arch.month}-${arch.borrower}`}
+                        className="hover:bg-slate-50/50 transition-colors"
+                      >
+                        {/* Month with Calendar Icon */}
+                        <td className="py-3 font-bold text-slate-900 whitespace-nowrap">
+                          <div className="flex items-center gap-1.5">
+                            <CalendarIcon className="w-4 h-4 text-slate-400" />
+                            <span>{arch.month}</span>
+                          </div>
+                        </td>
+
+                        {/* Borrower (if viewing all) */}
+                        {!isSpecificBorrower && (
+                          <td className="py-3 font-bold text-slate-800 whitespace-nowrap">
+                            {arch.borrower}
+                          </td>
+                        )}
+
+                        {/* Total Lent */}
+                        <td className="py-3 text-right tabular-nums text-amber-700 font-bold whitespace-nowrap">
+                          {formatMoney(arch.totalLent)}
+                        </td>
+
+                        {/* Total Goods */}
+                        <td className="py-3 text-right tabular-nums text-emerald-700 font-bold whitespace-nowrap">
+                          {formatMoney(arch.totalGoods)}
+                        </td>
+
+                        {/* Cleared Amount */}
+                        <td className="py-3 text-right tabular-nums font-black text-slate-900 whitespace-nowrap">
+                          {formatMoney(arch.paid)}
+                        </td>
+
+                        {/* Settled Badge */}
+                        <td className="py-3 text-center whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1 text-xs font-black px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            <CheckCircleIcon className="w-3.5 h-3.5" />
+                            <span>ទូទាត់រួចរាល់</span>
+                          </span>
+                        </td>
+
+                        {/* View Details Button */}
+                        <td className="py-3 text-right whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => setInspectingArchive(arch)}
+                            className="btn-outline min-h-[36px] px-3 py-1 text-xs font-bold flex items-center gap-1.5 rounded-xl text-primary-700 border-primary-200 bg-primary-50/50 hover:bg-primary-100 ml-auto"
+                          >
+                            <EyeIcon className="w-3.5 h-3.5" />
+                            <span>មើលលម្អិត</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
-      {/* 5. OVERALL TRANSACTION LOG (When all borrowers are viewed) */}
-      {!isSpecificBorrower && (
-        <TransactionLog
-          transactions={displayedTransactions}
-          monthOptions={monthOptions}
-          onDelete={onDeleteTransaction}
-        />
-      )}
-
-      {/* MODAL: Settle Month */}
-      {settleModalData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-slate-100">
+      {/* MODAL: Settle Month (Exact 2-Variable Active Calculation) */}
+      {showSettleModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-slate-100">
             <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-bold text-slate-800">
-                  ទូទាត់ប្រចាំខែ {settleModalData.month} (Settle Month)
+                <h3 className="text-xl font-black text-slate-900">
+                  ទូទាត់បិទបញ្ជីខែ {settleMonthValue}
                 </h3>
-                <p className="text-xs text-slate-500">អ្នកខ្ចី: {settleModalData.borrower}</p>
+                <p className="text-xs font-semibold text-slate-500 mt-0.5">
+                  ឈ្មោះ: {targetName}
+                </p>
               </div>
               <button
                 type="button"
-                onClick={() => setSettleModalData(null)}
-                className="text-slate-400 hover:text-slate-600 text-lg"
+                onClick={() => setShowSettleModal(false)}
+                className="text-slate-400 hover:text-slate-600 rounded-full min-h-[44px] min-w-[44px] flex items-center justify-center"
               >
-                ✕
+                <XIcon className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Breakdown */}
-            <div className="rounded-xl bg-slate-50 p-3.5 space-y-2 text-xs border border-slate-200">
-              <div className="flex justify-between">
-                <span className="text-slate-600">ឱ្យខ្ចី (Loans):</span>
-                <span className="font-semibold text-slate-800">{formatMoney(settleModalData.lent)}</span>
+            {/* Exact 2-Variable Active Calculation Card */}
+            <div className="rounded-2xl bg-slate-50 p-4 space-y-2.5 text-sm border border-slate-200">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-600 font-bold">ឱ្យខ្ចីសរុប:</span>
+                <span className="font-black text-amber-700 text-base tabular-nums">
+                  {formatMoney(totalActiveLent)}
+                </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">ទទួលសង (Repayments):</span>
-                <span className="font-semibold text-emerald-700">{formatMoney(settleModalData.repaid)}</span>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-600 font-bold">តម្លៃទំនិញសរុប:</span>
+                <span className="font-black text-emerald-700 text-base tabular-nums">
+                  {formatMoney(totalActiveGoods)}
+                </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">តម្លៃទំនិញ (Products):</span>
-                <span className="font-semibold text-blue-700">{formatMoney(settleModalData.products)}</span>
+              <div className="pt-2 border-t border-slate-200 flex justify-between items-center font-black text-base">
+                <span className="text-slate-800">សមតុល្យត្រូវទូទាត់:</span>
+                <span
+                  className={
+                    difference >= 0 ? 'text-amber-800' : 'text-blue-800'
+                  }
+                >
+                  {formatMoney(Math.abs(difference))}
+                </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">សងត្រឡប់ (Refunds):</span>
-                <span className="font-semibold text-blue-700">{formatMoney(settleModalData.refunded)}</span>
-              </div>
-              <div className="pt-2 border-t border-slate-200 flex justify-between font-bold text-sm">
-                <span>សមតុល្យត្រូវទូទាត់:</span>
-                <span className={settleModalData.runningBalance >= 0 ? 'text-amber-700' : 'text-blue-700'}>
-                  {formatMoney(Math.abs(settleModalData.runningBalance))}
-                  {settleModalData.runningBalance > 0
-                    ? ' (អ្នកខ្ចីសងលោកប៉ា)'
-                    : settleModalData.runningBalance < 0
-                    ? ' (លោកប៉ាសងអ្នកខ្ចី)'
-                    : ' (ស្មើគ្នា)'}
+
+              {/* Direction Indicator */}
+              <div className="text-xs font-bold text-slate-600 bg-white p-2.5 rounded-xl border border-slate-200 mt-2">
+                <span>ទិសដៅទូទាត់: </span>
+                <span className="font-black text-slate-900">
+                  {difference > 0
+                    ? `${targetName} ត្រូវសងប៉ា`
+                    : difference < 0
+                    ? `ប៉ាត្រូវបើកលុយឱ្យ ${targetName}`
+                    : 'ទូទាត់រួចរាល់'}
                 </span>
               </div>
             </div>
 
-            <form onSubmit={handleConfirmSettleMonth} className="space-y-3">
+            {/* Form */}
+            <form onSubmit={handleConfirmSettleMonth} className="space-y-4">
+              {/* Month selector if multiple active months */}
+              {activeMonths.length > 1 && (
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">
+                    ខែដែលត្រូវទូទាត់
+                  </label>
+                  <select
+                    value={settleMonthValue}
+                    onChange={(e) => setSettleMonthValue(e.target.value)}
+                    className="input-field text-base font-bold min-h-[48px]"
+                  >
+                    {activeMonths.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Pre-filled Paid Amount */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  ចំនួនទឹកប្រាក់ទូទាត់ជាក់ស្តែង (Actual Paid Amount - ៛)
+                <label className="block text-sm font-bold text-slate-700 mb-1">
+                  ចំនួនទឹកប្រាក់ទូទាត់ជាក់ស្តែង (៛)
                 </label>
                 <input
                   type="number"
                   inputMode="numeric"
                   value={settlePaidAmount}
                   onChange={(e) => setSettlePaidAmount(e.target.value)}
-                  className="input-field text-base font-bold tabular-nums"
+                  className="input-field text-xl font-black tabular-nums min-h-[48px]"
                   required
                 />
-                <p className="text-[11px] text-slate-500 mt-1">
-                  ប្រសិនបើបង់តិចជាងសមតុល្យ ចំនួនដែលនៅសល់នឹងត្រូវបន្តទៅខែបន្ទាប់ដោយស្វ័យប្រវត្តិ (Carried over)
-                </p>
               </div>
 
+              {/* Settlement Date */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  កាលបរិច្ឆេទនៃការទូទាត់ (Settlement Date)
+                <label className="block text-sm font-bold text-slate-700 mb-1">
+                  កាលបរិច្ឆេទនៃការទូទាត់
                 </label>
                 <input
                   type="date"
                   value={settleDate}
                   onChange={(e) => setSettleDate(e.target.value)}
-                  className="input-field text-sm font-medium"
+                  className="input-field text-base font-bold min-h-[48px]"
                   required
                 />
               </div>
 
-              <div className="pt-2 flex gap-2">
+              <div className="pt-2 flex gap-3">
                 <button
                   type="button"
-                  onClick={() => setSettleModalData(null)}
-                  className="btn-outline flex-1 text-sm py-2.5"
+                  onClick={() => setShowSettleModal(false)}
+                  className="btn-outline flex-1 min-h-[48px] text-base font-bold rounded-2xl"
                   disabled={settleSubmitting}
                 >
                   បោះបង់
@@ -936,9 +800,16 @@ export default function Dashboard({
                 <button
                   type="submit"
                   disabled={settleSubmitting}
-                  className="btn-primary flex-1 text-sm py-2.5 font-bold"
+                  className="btn-primary flex-1 min-h-[48px] text-base font-black shadow-md rounded-2xl flex items-center justify-center gap-1.5"
                 >
-                  {settleSubmitting ? 'កំពុងទូទាត់...' : 'បញ្ជាក់ការទូទាត់ (Confirm)'}
+                  {settleSubmitting ? (
+                    'កំពុងទូទាត់...'
+                  ) : (
+                    <>
+                      <CheckCircleIcon className="w-5 h-5" />
+                      <span>បញ្ជាក់ការទូទាត់</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>
@@ -946,40 +817,189 @@ export default function Dashboard({
         </div>
       )}
 
-      {/* MODAL: Reopen Month (Requires typing borrower name) */}
-      {reopenModalData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-slate-100">
-            <div className="border-b border-slate-100 pb-3">
-              <h3 className="text-lg font-bold text-amber-900">
-                ⚠️ បញ្ជាក់ការបើកខែ {reopenModalData.month} ឡើងវិញ (Reopen Month)
-              </h3>
-              <p className="text-xs text-slate-600 mt-1">
-                ការបើកខែឡើងវិញ នឹងដោះសោការបន្ថែម ឬលុបប្រតិបត្តិការក្នុងខែនេះ។
-              </p>
+      {/* MODAL: Archive Details Inspection (មើលលម្អិត) */}
+      {inspectingArchive && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 border border-slate-100 max-h-[90vh] overflow-y-auto flex flex-col">
+            <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-black text-slate-900">
+                  ព័ត៌មានលម្អិតការទូទាត់ខែ {inspectingArchive.month}
+                </h3>
+                <p className="text-xs font-semibold text-slate-500 mt-0.5">
+                  ឈ្មោះ: {inspectingArchive.borrower}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setInspectingArchive(null)}
+                className="text-slate-400 hover:text-slate-600 rounded-full min-h-[44px] min-w-[44px] flex items-center justify-center"
+              >
+                <XIcon className="w-5 h-5" />
+              </button>
             </div>
 
-            <form onSubmit={handleConfirmReopenMonth} className="space-y-3">
+            {/* Summary Card */}
+            <div className="rounded-2xl bg-slate-50 p-4 space-y-2 text-sm border border-slate-200">
+              <div className="flex justify-between">
+                <span className="text-slate-600 font-bold">ឱ្យខ្ចីសរុប:</span>
+                <span className="font-black text-amber-700">
+                  {formatMoney(inspectingArchive.totalLent)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600 font-bold">តម្លៃទំនិញសរុប:</span>
+                <span className="font-black text-emerald-700">
+                  {formatMoney(inspectingArchive.totalGoods)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600 font-bold">ទឹកប្រាក់ទូទាត់:</span>
+                <span className="font-black text-slate-900">
+                  {formatMoney(inspectingArchive.paid)}
+                </span>
+              </div>
+              <div className="flex justify-between text-xs text-slate-500 pt-1 border-t border-slate-200">
+                <span>កាលបរិច្ឆេទនៃការទូទាត់:</span>
+                <span className="font-semibold">{inspectingArchive.date}</span>
+              </div>
+            </div>
+
+            {/* Archived Transactions Breakdown */}
+            <div className="space-y-3 flex-1 overflow-y-auto">
+              {/* Archived Loans */}
+              {inspectingArchive.records.loans.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-500 mb-1.5">
+                    ប្រាក់ឱ្យខ្ចីក្នុងខែនេះ ({inspectingArchive.records.loans.length})
+                  </h4>
+                  <div className="space-y-1.5">
+                    {inspectingArchive.records.loans.map((t) => (
+                      <div
+                        key={t.id}
+                        className="rounded-xl border border-amber-200 bg-amber-50/50 p-2.5 flex items-center justify-between text-xs"
+                      >
+                        <div>
+                          <span className="font-bold text-slate-700">
+                            {formatDate(t.date)}
+                          </span>
+                          {t.note && (
+                            <span className="text-slate-500 italic block">
+                              {t.note}
+                            </span>
+                          )}
+                        </div>
+                        <span className="font-black text-amber-800 text-sm tabular-nums">
+                          {formatMoney(t.amount)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Archived Goods */}
+              {inspectingArchive.records.goods.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-500 mb-1.5">
+                    ទំនិញបានទទួលក្នុងខែនេះ ({inspectingArchive.records.goods.length})
+                  </h4>
+                  <div className="space-y-1.5">
+                    {inspectingArchive.records.goods.map((p) => {
+                      const itemTotal =
+                        p.total != null && !isNaN(p.total)
+                          ? Number(p.total)
+                          : Math.round((Number(p.quantity) || 0) * (Number(p.unitPrice) || 0));
+                      return (
+                        <div
+                          key={p.id}
+                          className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-2.5 flex items-center justify-between text-xs"
+                        >
+                          <div>
+                            <span className="font-bold text-slate-700">
+                              {formatDate(p.date)}
+                            </span>
+                            <span className="text-slate-600 block">
+                              {p.quantity} × {formatMoney(p.unitPrice)}
+                            </span>
+                            {p.note && (
+                              <span className="text-slate-500 italic block">
+                                {p.note}
+                              </span>
+                            )}
+                          </div>
+                          <span className="font-black text-emerald-800 text-sm tabular-nums">
+                            {formatMoney(itemTotal)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Bottom Actions */}
+            <div className="pt-3 border-t border-slate-100 flex gap-2">
+              <button
+                type="button"
+                onClick={() => handleOpenReopenMonth(inspectingArchive)}
+                className="btn-outline min-h-[44px] text-xs sm:text-sm font-bold text-amber-800 border-amber-300 hover:bg-amber-50 rounded-2xl flex-1"
+              >
+                បើកខែឡើងវិញ
+              </button>
+              <button
+                type="button"
+                onClick={() => setInspectingArchive(null)}
+                className="btn-primary min-h-[44px] text-xs sm:text-sm font-bold rounded-2xl flex-1"
+              >
+                បិទ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Reopen Month (Unlock & Restore Active Status) */}
+      {reopenModalData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-slate-100">
+            <div className="border-b border-slate-100 pb-3 flex items-center gap-2 text-amber-900">
+              <AlertCircleIcon className="w-6 h-6 text-amber-600 shrink-0" />
+              <h3 className="text-xl font-black">
+                បញ្ជាក់ការបើកខែ {reopenModalData.month} ឡើងវិញ
+              </h3>
+            </div>
+
+            <p className="text-xs text-slate-600">
+              ការបើកខែឡើងវិញ នឹងដោះសោទិន្នន័យឱ្យត្រឡប់មកផ្ទាំងសកម្មបច្ចុប្បន្នវិញ។
+            </p>
+
+            <form onSubmit={handleConfirmReopenMonth} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  សូមវាយឈ្មោះអ្នកខ្ចី <strong className="text-slate-900">"{reopenModalData.borrower}"</strong> ដើម្បីបញ្ជាក់:
+                <label className="block text-sm font-bold text-slate-700 mb-1">
+                  សូមវាយឈ្មោះអ្នកខ្ចី{' '}
+                  <strong className="text-slate-900">
+                    "{reopenModalData.borrower}"
+                  </strong>{' '}
+                  ដើម្បីបញ្ជាក់:
                 </label>
                 <input
                   type="text"
                   value={reopenTypedName}
                   onChange={(e) => setReopenTypedName(e.target.value)}
                   placeholder={`វាយ "${reopenModalData.borrower}"`}
-                  className="input-field text-sm font-bold"
+                  className="input-field text-base font-bold min-h-[48px]"
                   autoFocus
                   required
                 />
               </div>
 
-              <div className="pt-2 flex gap-2">
+              <div className="pt-2 flex gap-3">
                 <button
                   type="button"
                   onClick={() => setReopenModalData(null)}
-                  className="btn-outline flex-1 text-sm py-2.5"
+                  className="btn-outline flex-1 min-h-[48px] text-base font-bold rounded-2xl"
                   disabled={reopenSubmitting}
                 >
                   បោះបង់
@@ -989,47 +1009,16 @@ export default function Dashboard({
                   disabled={
                     reopenSubmitting ||
                     normalizeBorrowerName(reopenTypedName).toLowerCase() !==
-                      normalizeBorrowerName(reopenModalData.borrower).toLowerCase()
+                      normalizeBorrowerName(
+                        reopenModalData.borrower,
+                      ).toLowerCase()
                   }
-                  className="btn-danger flex-1 text-sm py-2.5 font-bold disabled:opacity-40"
+                  className="btn-danger flex-1 min-h-[48px] text-base font-bold disabled:opacity-40 shadow-md rounded-2xl"
                 >
-                  {reopenSubmitting ? 'កំពុងបើកឡើងវិញ...' : 'បើកខែឡើងវិញ (Reopen)'}
+                  {reopenSubmitting ? 'កំពុងបើកឡើងវិញ...' : 'បើកខែឡើងវិញ'}
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: Delete Product Confirmation */}
-      {confirmDeleteProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
-            <h3 className="text-lg font-bold text-slate-800 mb-2">
-              បញ្ជាក់ការលុបទំនិញ (Confirm Delete Product)
-            </h3>
-            <p className="text-sm text-slate-600 mb-6">
-              តើអ្នកប្រាកដថាចង់លុបទំនិញនេះមែនទេ? តម្លៃទំនិញនឹងលែងត្រូវកាត់កងបំណុលទៀតហើយ។
-            </p>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => setConfirmDeleteProduct(null)}
-                className="btn-outline flex-1"
-              >
-                បោះបង់ (Cancel)
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onDeleteProduct(confirmDeleteProduct);
-                  setConfirmDeleteProduct(null);
-                }}
-                className="btn-danger flex-1"
-              >
-                លុប (Delete)
-              </button>
-            </div>
           </div>
         </div>
       )}

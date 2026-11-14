@@ -112,7 +112,7 @@ export async function listProducts(username, password) {
 export async function addProduct(
   username,
   password,
-  { id, date, borrower, item, quantity, unitPrice, note },
+  { id, date, borrower, item, itemName, quantity, unitPrice, note },
 ) {
   return request({
     username,
@@ -121,7 +121,7 @@ export async function addProduct(
     id: id || crypto.randomUUID(),
     date,
     borrower,
-    item: item || '',
+    item: item || itemName || '',
     quantity: Math.round(Number(quantity) * 100) / 100,
     unitPrice: Math.round(Number(unitPrice)),
     note: note || '',

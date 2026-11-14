@@ -422,6 +422,24 @@ export function computeMonthlyTable(transactions = [], products = [], settlement
 }
 
 /**
+ * Check whether a transaction or product record is settled/archived.
+ */
+export function isRecordSettled(record, settlements = []) {
+  if (!record) return false;
+  if (record.settled === true) return true;
+  if (!record.date || !Array.isArray(settlements) || settlements.length === 0) {
+    return false;
+  }
+  const m = normalizeDate(record.date).slice(0, 7);
+  const b = normalizeBorrowerName(record.borrower).toLowerCase();
+  return settlements.some(
+    (s) =>
+      String(s.month) === m &&
+      normalizeBorrowerName(s.borrower).toLowerCase() === b,
+  );
+}
+
+/**
  * Get unique borrower names from transactions and products.
  */
 export function getUniqueBorrowers(transactions = [], products = []) {
