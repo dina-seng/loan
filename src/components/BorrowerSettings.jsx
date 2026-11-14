@@ -4,6 +4,7 @@ import {
   getUniqueBorrowers,
   normalizeBorrowerName,
 } from '../utils';
+import { XIcon } from './Icons';
 
 export default function BorrowerSettings({ transactions, onRename, onClose }) {
   const borrowers = useMemo(() => getUniqueBorrowers(transactions), [transactions]);
@@ -83,7 +84,7 @@ export default function BorrowerSettings({ transactions, onRename, onClose }) {
             className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
             aria-label="បិទ (Close)"
           >
-            ✕
+            <XIcon className="w-5 h-5" />
           </button>
         </div>
 

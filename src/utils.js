@@ -295,8 +295,27 @@ export function computeSettlement(outstandingLoan, totalProductValue) {
  */
 export function normalizeDate(dateVal) {
   if (!dateVal) return '';
-  const str = String(dateVal).trim();
+  const converted = convertKhmerDigits(dateVal);
+  const str = String(converted).trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+
+  // Handle DD/MM/YYYY or MM/DD/YYYY
+  const slashMatch = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slashMatch) {
+    let p1 = parseInt(slashMatch[1], 10);
+    let p2 = parseInt(slashMatch[2], 10);
+    const y = slashMatch[3];
+    const m = p1 > 12 ? p2 : p1;
+    const d = p1 > 12 ? p1 : p2;
+    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+
+  // Handle YYYY/MM/DD
+  const slashYMD = str.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+  if (slashYMD) {
+    return `${slashYMD[1]}-${String(slashYMD[2]).padStart(2, '0')}-${String(slashYMD[3]).padStart(2, '0')}`;
+  }
+
   const d = new Date(str);
   if (!isNaN(d.getTime())) {
     const y = d.getFullYear();
@@ -434,7 +453,7 @@ export function isRecordSettled(record, settlements = []) {
   const b = normalizeBorrowerName(record.borrower).toLowerCase();
   return settlements.some(
     (s) =>
-      String(s.month) === m &&
+      String(s.month || '').trim() === m &&
       normalizeBorrowerName(s.borrower).toLowerCase() === b,
   );
 }

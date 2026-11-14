@@ -19,7 +19,7 @@ import Dashboard from "./components/Dashboard";
 import SettingsModal from "./components/SettingsModal";
 import UnifiedEntryModal from "./components/UnifiedEntryModal";
 import SyncIndicator from "./components/SyncIndicator";
-import { normalizeBorrowerName, todayStr, exportToCsv } from "./utils";
+import { normalizeBorrowerName, normalizeDate, todayStr, exportToCsv } from "./utils";
 import { SettingsIcon, LogOutIcon, AlertCircleIcon, XIcon } from "./components/Icons";
 
 export default function App() {
@@ -237,18 +237,19 @@ export default function App() {
     setSettlements((prev) => [newSettlement, ...prev]);
 
     // Mark current active loan and goods records for that borrower as settled: true
-    const sMonth = String(settlementData.month);
+    const sMonth = String(settlementData.month || "");
     const sBorrower = normalizeBorrowerName(settlementData.borrower).toLowerCase();
+    const isAll = !sBorrower || sBorrower === "all" || sBorrower === "__all__" || sBorrower === "បង្ហាញទាំងអស់" || sBorrower === "ទាំងអស់";
 
     setTransactions((prev) =>
       prev.map((t) => {
         const tMonth = normalizeDate(t.date).slice(0, 7);
         const tBorrower = normalizeBorrowerName(t.borrower).toLowerCase();
         if (
-          (!sBorrower || tBorrower === sBorrower) &&
+          (isAll || tBorrower === sBorrower) &&
           (!sMonth || tMonth === sMonth)
         ) {
-          return { ...t, settled: true };
+          return { ...t, status: `Settled:${id}`, settled: true };
         }
         return t;
       }),
@@ -259,10 +260,10 @@ export default function App() {
         const pMonth = normalizeDate(p.date).slice(0, 7);
         const pBorrower = normalizeBorrowerName(p.borrower).toLowerCase();
         if (
-          (!sBorrower || pBorrower === sBorrower) &&
+          (isAll || pBorrower === sBorrower) &&
           (!sMonth || pMonth === sMonth)
         ) {
-          return { ...p, settled: true };
+          return { ...p, status: `Settled:${id}`, settled: true };
         }
         return p;
       }),
@@ -275,24 +276,26 @@ export default function App() {
     } catch (err) {
       setSyncStatus("failed");
       setSettlements((prev) => prev.filter((s) => s.id !== id));
-      await fetchData();
+      await fetchData().catch(() => {});
       throw err;
     }
   };
 
   // Reopen month handler
-  const handleReopenMonth = async ({ month, borrower }) => {
+  const handleReopenMonth = async ({ id, month, borrower }) => {
     setSyncStatus("syncing");
-    const sMonth = String(month);
+    const sMonth = String(month || "");
     const sBorrower = normalizeBorrowerName(borrower).toLowerCase();
+    const isAll = !sBorrower || sBorrower === "all" || sBorrower === "__all__" || sBorrower === "បង្ហាញទាំងអស់" || sBorrower === "ទាំងអស់";
 
     // Optimistically un-settle records
     setSettlements((prev) =>
       prev.filter(
         (s) =>
           !(
-            String(s.month) === sMonth &&
-            normalizeBorrowerName(s.borrower).toLowerCase() === sBorrower
+            (id && s.id === id) ||
+            (String(s.month) === sMonth &&
+              (isAll || normalizeBorrowerName(s.borrower).toLowerCase() === sBorrower))
           ),
       ),
     );
@@ -302,10 +305,10 @@ export default function App() {
         const tMonth = normalizeDate(t.date).slice(0, 7);
         const tBorrower = normalizeBorrowerName(t.borrower).toLowerCase();
         if (
-          (!sBorrower || tBorrower === sBorrower) &&
-          (!sMonth || tMonth === sMonth)
+          (id && t.status === `Settled:${id}`) ||
+          ((isAll || tBorrower === sBorrower) && (!sMonth || tMonth === sMonth))
         ) {
-          return { ...t, settled: false };
+          return { ...t, status: "Active", settled: false };
         }
         return t;
       }),
@@ -316,22 +319,22 @@ export default function App() {
         const pMonth = normalizeDate(p.date).slice(0, 7);
         const pBorrower = normalizeBorrowerName(p.borrower).toLowerCase();
         if (
-          (!sBorrower || pBorrower === sBorrower) &&
-          (!sMonth || pMonth === sMonth)
+          (id && p.status === `Settled:${id}`) ||
+          ((isAll || pBorrower === sBorrower) && (!sMonth || pMonth === sMonth))
         ) {
-          return { ...p, settled: false };
+          return { ...p, status: "Active", settled: false };
         }
         return p;
       }),
     );
 
     try {
-      await reopenMonthApi(auth.username, auth.password, { month, borrower });
+      await reopenMonthApi(auth.username, auth.password, { id, month, borrower });
       setSyncStatus("synced");
       await fetchData();
     } catch (err) {
       setSyncStatus("failed");
-      await fetchData();
+      await fetchData().catch(() => {});
       throw err;
     }
   };

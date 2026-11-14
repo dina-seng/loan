@@ -2,42 +2,79 @@ const APPS_SCRIPT_URL = import.meta.env.VITE_APPS_SCRIPT_URL?.trim();
 const API_URL = import.meta.env.DEV ? '/api/apps-script' : APPS_SCRIPT_URL;
 
 /**
+ * Translate backend errors to natural, clear Khmer messages.
+ */
+export function getKhmerErrorMessage(errorCode) {
+  const code = String(errorCode || '').trim();
+  const map = {
+    already_settled: 'ខែនេះបានទូទាត់រួចរាល់ហើយ',
+    server_busy_try_again: 'ប្រព័ន្ធកំពុងរវល់ សូមព្យាយាមម្តងទៀត',
+    lock_timeout: 'ប្រព័ន្ធកំពុងរវល់ សូមព្យាយាមម្តងទៀត',
+    invalid_settlement_data: 'ទិន្នន័យទូទាត់មិនត្រឹមត្រូវ',
+    invalid_borrower: 'សូមជ្រើសរើសឈ្មោះអ្នកខ្ចី',
+    invalid_date: 'កាលបរិច្ឆេទមិនត្រឹមត្រូវ',
+    invalid_type: 'ប្រភេទប្រតិបត្តិការមិនត្រឹមត្រូវ',
+    invalid_credentials: 'ឈ្មោះគណនី ឬពាក្យសម្ងាត់មិនត្រឹមត្រូវ',
+    unauthorized: 'ឈ្មោះគណនី ឬពាក្យសម្ងាត់មិនត្រឹមត្រូវ',
+    month_settled: 'ខែនេះត្រូវបានទូទាត់បិទបញ្ជីរួចរាល់ហើយ មិនអាចកែប្រែបានទេ',
+    not_found: 'រកមិនឃើញទិន្នន័យនេះទេ',
+    server_misconfigured: 'ប្រព័ន្ធមិនទាន់បានកំណត់រចនាសម្ព័ន្ធត្រឹមត្រូវទេ',
+    timeout: 'ប្រព័ន្ធឆ្លើយតបយឺតពេក សូមព្យាយាមម្តងទៀត',
+  };
+  return map[code] || errorCode || 'មានបញ្ហាមិនស្គាល់ សូមព្យាយាមម្តងទៀត';
+}
+
+/**
  * Make a POST request to the Google Apps Script web app.
- * Uses Content-Type: text/plain to avoid CORS preflight.
+ * Uses Content-Type: text/plain to avoid slow CORS OPTIONS preflight.
+ * Enforces a 15000ms AbortController timeout.
  */
 async function request(body) {
   if (!APPS_SCRIPT_URL) {
     throw new Error('VITE_APPS_SCRIPT_URL is not set. Check your .env file.');
   }
 
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify(body),
-    redirect: 'follow',
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-  }
-
-  const text = await res.text();
-  let data;
   try {
-    data = JSON.parse(text);
-  } catch {
-    throw new Error(
-      'ប្រព័ន្ធ Google Sheet កំពុងមមាញឹក សូមរង់ចាំបន្តិចហើយព្យាយាមម្តងទៀត (Google Apps Script is busy, please try again in a few moments)',
-    );
-  }
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(body),
+      redirect: 'follow',
+      signal: controller.signal,
+    });
 
-  if (!data.ok) {
-    const err = new Error(data.error || 'Unknown error');
-    err.code = data.error;
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    }
+
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(getKhmerErrorMessage('server_busy_try_again'));
+    }
+
+    if (!data.ok) {
+      const err = new Error(getKhmerErrorMessage(data.error));
+      err.code = data.error;
+      throw err;
+    }
+
+    return data;
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      const timeoutErr = new Error(getKhmerErrorMessage('timeout'));
+      timeoutErr.code = 'timeout';
+      throw timeoutErr;
+    }
     throw err;
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  return data;
 }
 
 /**
@@ -154,31 +191,41 @@ export async function listSettlements(username, password) {
 export async function settleMonth(
   username,
   password,
-  { id, month, borrower, balanceBefore, paid, direction, carriedOver, date },
-) {
-  return request({
-    username,
-    password,
-    action: 'settle_month',
-    id: id || crypto.randomUUID(),
+  {
+    id,
     month,
     borrower,
-    balanceBefore: Math.round(Number(balanceBefore)),
-    paid: Math.round(Number(paid)),
+    totalLent,
+    totalGoods,
+    paid,
     direction,
-    carriedOver: Math.round(Number(carriedOver)),
     date,
+  },
+) {
+  return request({
+    action: 'settle_month',
+    username,
+    password,
+    id: id || crypto.randomUUID(),
+    borrower,
+    month,
+    date,
+    totalLent: Math.round(Number(totalLent || 0)),
+    totalGoods: Math.round(Number(totalGoods || 0)),
+    paid: Math.round(Number(paid != null ? paid : 0)),
+    direction: direction || 'cleared',
   });
 }
 
 /**
  * Reopen a settled month.
  */
-export async function reopenMonth(username, password, { month, borrower }) {
+export async function reopenMonth(username, password, { id, month, borrower }) {
   return request({
     username,
     password,
     action: 'reopen_month',
+    id,
     month,
     borrower,
   });

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import {
   formatMoney,
   normalizeBorrowerName,
@@ -18,8 +18,7 @@ import {
   CalendarIcon,
   ArchiveIcon,
   EyeIcon,
-  ChevronDownIcon,
-  ChevronUpIcon,
+  RefreshCwIcon,
   AlertCircleIcon,
   XIcon,
 } from './Icons';
@@ -38,16 +37,16 @@ export default function Dashboard({
 }) {
   const [selectedBorrower, setSelectedBorrower] = useState(ALL_BORROWERS);
 
-  // Collapsible Monthly Archive state (collapsed by default to keep daily screen clean)
-  const [isArchiveOpen, setIsArchiveOpen] = useState(false);
   const [inspectingArchive, setInspectingArchive] = useState(null);
 
   // Settlement modal state
   const [showSettleModal, setShowSettleModal] = useState(false);
+  const [settleBorrower, setSettleBorrower] = useState('');
   const [settlePaidAmount, setSettlePaidAmount] = useState('');
   const [settleDate, setSettleDate] = useState(todayStr());
   const [settleMonthValue, setSettleMonthValue] = useState(todayStr().slice(0, 7));
   const [settleSubmitting, setSettleSubmitting] = useState(false);
+  const [toastMessage, setToastMessage] = useState(null);
 
   // Reopen month modal state
   const [reopenModalData, setReopenModalData] = useState(null);
@@ -83,10 +82,10 @@ export default function Dashboard({
     () =>
       isSpecificBorrower
         ? transactions.filter(
-            (t) =>
-              normalizeBorrowerName(t.borrower).toLowerCase() ===
-              activeBorrower.toLowerCase(),
-          )
+          (t) =>
+            normalizeBorrowerName(t.borrower).toLowerCase() ===
+            activeBorrower.toLowerCase(),
+        )
         : transactions,
     [transactions, activeBorrower, isSpecificBorrower],
   );
@@ -95,10 +94,10 @@ export default function Dashboard({
     () =>
       isSpecificBorrower
         ? products.filter(
-            (p) =>
-              normalizeBorrowerName(p.borrower).toLowerCase() ===
-              activeBorrower.toLowerCase(),
-          )
+          (p) =>
+            normalizeBorrowerName(p.borrower).toLowerCase() ===
+            activeBorrower.toLowerCase(),
+        )
         : products,
     [products, activeBorrower, isSpecificBorrower],
   );
@@ -107,10 +106,10 @@ export default function Dashboard({
     () =>
       isSpecificBorrower
         ? settlements.filter(
-            (s) =>
-              normalizeBorrowerName(s.borrower).toLowerCase() ===
-              activeBorrower.toLowerCase(),
-          )
+          (s) =>
+            normalizeBorrowerName(s.borrower).toLowerCase() ===
+            activeBorrower.toLowerCase(),
+        )
         : settlements,
     [settlements, activeBorrower, isSpecificBorrower],
   );
@@ -118,12 +117,14 @@ export default function Dashboard({
   // ACTIVE (UNSETTLED) RECORDS for the current active period
   const activeTransactions = useMemo(() => {
     return displayedTransactions.filter(
-      (t) => t.type === 'Lend' && !isRecordSettled(t, settlements),
+      (t) => t.type === 'Lend' && !t.settled && !isRecordSettled(t, settlements),
     );
   }, [displayedTransactions, settlements]);
 
   const activeProducts = useMemo(() => {
-    return displayedProducts.filter((p) => !isRecordSettled(p, settlements));
+    return displayedProducts.filter(
+      (p) => !p.settled && !isRecordSettled(p, settlements),
+    );
   }, [displayedProducts, settlements]);
 
   // Core 2 Metrics: Total Active Lent & Total Active Goods
@@ -166,43 +167,203 @@ export default function Dashboard({
     return arr.length > 0 ? arr : [todayStr().slice(0, 7)];
   }, [activeTransactions, activeProducts]);
 
+  const targetBorrower = isSpecificBorrower ? activeBorrower : settleBorrower;
+  const targetMonth = settleMonthValue || todayStr().slice(0, 7);
+
+  // Available months for targetBorrower (with transactions/products or current month)
+  const borrowerAvailableMonths = useMemo(() => {
+    if (!targetBorrower) return [todayStr().slice(0, 7)];
+    const bLower = normalizeBorrowerName(targetBorrower).toLowerCase();
+    const set = new Set();
+    for (const t of transactions) {
+      if (normalizeBorrowerName(t.borrower).toLowerCase() === bLower) {
+        const m = normalizeDate(t.date).slice(0, 7);
+        if (m && /^\d{4}-\d{2}$/.test(m)) set.add(m);
+      }
+    }
+    for (const p of products) {
+      if (normalizeBorrowerName(p.borrower).toLowerCase() === bLower) {
+        const m = normalizeDate(p.date).slice(0, 7);
+        if (m && /^\d{4}-\d{2}$/.test(m)) set.add(m);
+      }
+    }
+    set.add(todayStr().slice(0, 7));
+    return [...set].sort((a, b) => b.localeCompare(a));
+  }, [targetBorrower, transactions, products]);
+
+  // Check if targetMonth is already recorded in settlements for targetBorrower
+  const isAlreadySettled = useMemo(() => {
+    if (!targetBorrower || !targetMonth) return false;
+    const bLower = normalizeBorrowerName(targetBorrower).toLowerCase();
+    return settlements.some(
+      (s) =>
+        String(s.month || '').trim() === targetMonth &&
+        normalizeBorrowerName(s.borrower).toLowerCase() === bLower,
+    );
+  }, [targetBorrower, targetMonth, settlements]);
+
+  // Unsettled records strictly for targetBorrower in targetMonth
+  const modalMonthActiveTransactions = useMemo(() => {
+    if (!targetBorrower || !targetMonth) return [];
+    const bLower = normalizeBorrowerName(targetBorrower).toLowerCase();
+    const isAll = bLower === 'all' || bLower === '__all__' || bLower === 'បង្ហាញទាំងអស់' || bLower === 'ទាំងអស់';
+    return transactions.filter(
+      (t) =>
+        (isAll || normalizeBorrowerName(t.borrower).toLowerCase() === bLower) &&
+        normalizeDate(t.date).slice(0, 7) === targetMonth &&
+        t.type === 'Lend' &&
+        !t.settled &&
+        !isRecordSettled(t, settlements),
+    );
+  }, [targetBorrower, targetMonth, transactions, settlements]);
+
+  const modalMonthActiveProducts = useMemo(() => {
+    if (!targetBorrower || !targetMonth) return [];
+    const bLower = normalizeBorrowerName(targetBorrower).toLowerCase();
+    const isAll = bLower === 'all' || bLower === '__all__' || bLower === 'បង្ហាញទាំងអស់' || bLower === 'ទាំងអស់';
+    return products.filter(
+      (p) =>
+        (isAll || normalizeBorrowerName(p.borrower).toLowerCase() === bLower) &&
+        normalizeDate(p.date).slice(0, 7) === targetMonth &&
+        !p.settled &&
+        !isRecordSettled(p, settlements),
+    );
+  }, [targetBorrower, targetMonth, products, settlements]);
+
+  const modalTotalLent = useMemo(() => {
+    return modalMonthActiveTransactions.reduce(
+      (sum, t) => sum + (Number(t.amount) || 0),
+      0,
+    );
+  }, [modalMonthActiveTransactions]);
+
+  const modalTotalGoods = useMemo(() => {
+    return modalMonthActiveProducts.reduce((sum, p) => {
+      const itemTotal =
+        p.total != null && !isNaN(p.total)
+          ? Number(p.total)
+          : Math.round((Number(p.quantity) || 0) * (Number(p.unitPrice) || 0));
+      return sum + itemTotal;
+    }, 0);
+  }, [modalMonthActiveProducts]);
+
+  const modalNetBalance = modalTotalLent - modalTotalGoods;
+  const isEmptyMonth = modalTotalLent === 0 && modalTotalGoods === 0;
+  const canSettle = !isAlreadySettled && !isEmptyMonth && !!targetBorrower;
+
+  const modalDirection =
+    modalNetBalance > 0
+      ? 'borrower_pays_dad'
+      : modalNetBalance < 0
+        ? 'dad_pays_borrower'
+        : 'cleared';
+
+  // Automatically synchronize settlePaidAmount whenever person, month, or balance changes
+  useEffect(() => {
+    if (showSettleModal) {
+      setSettlePaidAmount(String(Math.abs(modalNetBalance)));
+    }
+  }, [showSettleModal, targetBorrower, targetMonth, modalNetBalance]);
+
   // Open the Settlement Modal with exact active numbers pre-filled
   const handleOpenSettleModal = () => {
-    const latestMonth = activeMonths[activeMonths.length - 1] || todayStr().slice(0, 7);
-    setSettleMonthValue(latestMonth);
-    setSettlePaidAmount(String(Math.abs(difference)));
+    let initialBorrower = isSpecificBorrower ? activeBorrower : '';
+    if (!initialBorrower && borrowerNames.length > 0) {
+      initialBorrower = borrowerNames[0];
+    }
+    setSettleBorrower(initialBorrower);
+
+    // Find newest unsettled month for this borrower
+    const bLower = normalizeBorrowerName(initialBorrower).toLowerCase();
+    const months = new Set();
+    for (const t of transactions) {
+      if (
+        normalizeBorrowerName(t.borrower).toLowerCase() === bLower &&
+        t.type === 'Lend' &&
+        !isRecordSettled(t, settlements)
+      ) {
+        const m = normalizeDate(t.date).slice(0, 7);
+        if (m) months.add(m);
+      }
+    }
+    for (const p of products) {
+      if (
+        normalizeBorrowerName(p.borrower).toLowerCase() === bLower &&
+        !isRecordSettled(p, settlements)
+      ) {
+        const m = normalizeDate(p.date).slice(0, 7);
+        if (m) months.add(m);
+      }
+    }
+    const sorted = [...months].sort((a, b) => b.localeCompare(a));
+    const initialMonth = sorted[0] || todayStr().slice(0, 7);
+
+    setSettleMonthValue(initialMonth);
     setSettleDate(todayStr());
     setShowSettleModal(true);
+  };
+
+  const handleSettleBorrowerChange = (newBorrower) => {
+    setSettleBorrower(newBorrower);
+    const bLower = normalizeBorrowerName(newBorrower).toLowerCase();
+    const months = new Set();
+    for (const t of transactions) {
+      if (
+        normalizeBorrowerName(t.borrower).toLowerCase() === bLower &&
+        t.type === 'Lend' &&
+        !isRecordSettled(t, settlements)
+      ) {
+        const m = normalizeDate(t.date).slice(0, 7);
+        if (m) months.add(m);
+      }
+    }
+    for (const p of products) {
+      if (
+        normalizeBorrowerName(p.borrower).toLowerCase() === bLower &&
+        !isRecordSettled(p, settlements)
+      ) {
+        const m = normalizeDate(p.date).slice(0, 7);
+        if (m) months.add(m);
+      }
+    }
+    const sorted = [...months].sort((a, b) => b.localeCompare(a));
+    const initialMonth = sorted[0] || todayStr().slice(0, 7);
+    setSettleMonthValue(initialMonth);
   };
 
   // Confirm and Execute Month Settlement
   const handleConfirmSettleMonth = async (e) => {
     e.preventDefault();
+    if (!canSettle) return;
+
+    const validMonth = (
+      /^\d{4}-\d{2}$/.test(targetMonth)
+        ? targetMonth
+        : (settleDate || todayStr()).slice(0, 7)
+    ).trim();
+
+    const validDate = (
+      /^\d{4}-\d{2}-\d{2}$/.test(settleDate)
+        ? settleDate
+        : todayStr()
+    ).trim();
 
     const paid = Math.round(Number(settlePaidAmount) || 0);
-    const balanceBefore = difference;
-    const direction =
-      difference > 0
-        ? 'borrower_pays_dad'
-        : difference < 0
-        ? 'dad_pays_borrower'
-        : 'cleared';
 
     setSettleSubmitting(true);
     try {
       await onSettleMonth({
-        month: settleMonthValue,
-        borrower: isSpecificBorrower ? activeBorrower : '',
-        totalLent: totalActiveLent,
-        totalGoods: totalActiveGoods,
-        balanceBefore,
+        month: validMonth,
+        borrower: targetBorrower,
+        totalLent: modalTotalLent,
+        totalGoods: modalTotalGoods,
         paid,
-        direction,
-        carriedOver: 0,
-        date: settleDate,
-        status: 'ទូទាត់រួចរាល់',
+        direction: modalDirection,
+        date: validDate,
       });
       setShowSettleModal(false);
+      setToastMessage('បានទូទាត់បិទបញ្ជីខែនេះរួចរាល់!');
+      setTimeout(() => setToastMessage(null), 4000);
     } catch (err) {
       alert('មិនអាចទូទាត់បានទេ: ' + err.message);
     } finally {
@@ -213,6 +374,7 @@ export default function Dashboard({
   // Reopen Month Handlers
   const handleOpenReopenMonth = (monthRow) => {
     setReopenModalData({
+      id: monthRow.id,
       month: monthRow.month,
       borrower: monthRow.borrower || activeBorrower,
     });
@@ -223,9 +385,12 @@ export default function Dashboard({
     e.preventDefault();
     if (!reopenModalData) return;
 
+    const bTarget = normalizeBorrowerName(reopenModalData.borrower).toLowerCase();
+    const isAll = bTarget === 'all' || bTarget === '__all__' || bTarget === 'បង្ហាញទាំងអស់' || bTarget === 'ទាំងអស់';
+
     if (
-      normalizeBorrowerName(reopenTypedName).toLowerCase() !==
-      normalizeBorrowerName(reopenModalData.borrower).toLowerCase()
+      !isAll &&
+      normalizeBorrowerName(reopenTypedName).toLowerCase() !== bTarget
     ) {
       alert(`សូមវាយឈ្មោះ "${reopenModalData.borrower}" ឱ្យបានត្រឹមត្រូវ`);
       return;
@@ -234,11 +399,14 @@ export default function Dashboard({
     setReopenSubmitting(true);
     try {
       await onReopenMonth({
+        id: reopenModalData.id,
         month: reopenModalData.month,
         borrower: reopenModalData.borrower,
       });
       setReopenModalData(null);
       setInspectingArchive(null);
+      setToastMessage('បានបើកខែឡើងវិញរួចរាល់!');
+      setTimeout(() => setToastMessage(null), 4000);
     } catch (err) {
       alert('មិនអាចបើកខែឡើងវិញបានទេ: ' + err.message);
     } finally {
@@ -249,30 +417,31 @@ export default function Dashboard({
   // Archived settled months summary list
   const archivedSettlements = useMemo(() => {
     return displayedSettlements.map((s) => {
-      const m = String(s.month);
+      const m = String(s.month || '').trim();
       const b = normalizeBorrowerName(s.borrower).toLowerCase();
+      const isAll = !b || b === 'all' || b === '__all__' || b === 'បង្ហាញទាំងអស់' || b === 'ទាំងអស់';
 
       // Find archived loans in this month
-      const monthLoans = displayedTransactions.filter(
+      const monthLoans = transactions.filter(
         (t) =>
           t.type === 'Lend' &&
           normalizeDate(t.date).slice(0, 7) === m &&
-          (!b || normalizeBorrowerName(t.borrower).toLowerCase() === b),
+          (isAll || normalizeBorrowerName(t.borrower).toLowerCase() === b),
       );
       const totalLent =
-        s.totalLent != null
-          ? s.totalLent
+        s.totalLent != null && !isNaN(s.totalLent)
+          ? Number(s.totalLent)
           : monthLoans.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
       // Find archived goods in this month
-      const monthGoods = displayedProducts.filter(
+      const monthGoods = products.filter(
         (p) =>
           normalizeDate(p.date).slice(0, 7) === m &&
-          (!b || normalizeBorrowerName(p.borrower).toLowerCase() === b),
+          (isAll || normalizeBorrowerName(p.borrower).toLowerCase() === b),
       );
       const totalGoods =
-        s.totalGoods != null
-          ? s.totalGoods
+        s.totalGoods != null && !isNaN(s.totalGoods)
+          ? Number(s.totalGoods)
           : monthGoods.reduce((sum, p) => {
               const itemTotal =
                 p.total != null && !isNaN(p.total)
@@ -281,16 +450,21 @@ export default function Dashboard({
               return sum + itemTotal;
             }, 0);
 
+      const paid =
+        s.paid != null && !isNaN(s.paid)
+          ? Number(s.paid)
+          : Math.abs(totalLent - totalGoods);
+
       return {
         id: s.id,
         month: m,
-        borrower: s.borrower,
+        borrower: s.borrower || 'បង្ហាញទាំងអស់',
         totalLent,
         totalGoods,
-        paid: s.paid != null ? s.paid : Math.abs(s.balanceBefore || 0),
+        paid,
         balanceBefore: s.balanceBefore,
         direction: s.direction,
-        date: s.date,
+        date: formatDate(s.date) || s.date || '-',
         status: s.status || 'ទូទាត់រួចរាល់',
         records: {
           loans: monthLoans,
@@ -298,7 +472,7 @@ export default function Dashboard({
         },
       };
     });
-  }, [displayedSettlements, displayedTransactions, displayedProducts]);
+  }, [displayedSettlements, transactions, products]);
 
   // Overall summary for all borrowers
   const borrowerSummary = useMemo(
@@ -307,7 +481,14 @@ export default function Dashboard({
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 bg-emerald-800 text-white font-bold px-5 py-3 rounded-2xl shadow-xl flex items-center gap-2 text-sm sm:text-base border border-emerald-700 animate-fade-in">
+          <CheckIcon className="w-5 h-5 text-emerald-300" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
       {/* 1. PERSON SELECTOR & UNIFIED ACTION BAR */}
       <section className="card p-4 sm:p-5 border-slate-200 shadow-sm rounded-3xl bg-white">
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
@@ -351,25 +532,23 @@ export default function Dashboard({
       <section className="space-y-4">
         {/* TOP ROW: Full-Width Card (Active Balance) */}
         <div
-          className={`rounded-3xl border-2 p-5 sm:p-7 shadow-md transition-all ${
-            difference > 0
+          className={`rounded-3xl border-2 p-5 sm:p-7 shadow-md transition-all ${difference > 0
               ? 'bg-amber-50/95 border-amber-400 text-amber-950'
               : difference < 0
-              ? 'bg-blue-50/95 border-blue-400 text-blue-950'
-              : 'bg-emerald-50/95 border-emerald-400 text-emerald-950'
-          }`}
+                ? 'bg-blue-50/95 border-blue-400 text-blue-950'
+                : 'bg-emerald-50/95 border-emerald-400 text-emerald-950'
+            }`}
         >
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-black/10 pb-5">
             <div>
               {/* Status Badge */}
               <div
-                className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1 text-xs sm:text-sm font-black border shadow-sm ${
-                  difference > 0
+                className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1 text-xs sm:text-sm font-black border shadow-sm ${difference > 0
                     ? 'bg-amber-100 text-amber-900 border-amber-300'
                     : difference < 0
-                    ? 'bg-blue-100 text-blue-900 border-blue-300'
-                    : 'bg-emerald-100 text-emerald-900 border-emerald-300'
-                }`}
+                      ? 'bg-blue-100 text-blue-900 border-blue-300'
+                      : 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                  }`}
               >
                 {difference > 0 && <BanknoteIcon className="w-4 h-4" />}
                 {difference < 0 && <PackageIcon className="w-4 h-4" />}
@@ -378,8 +557,8 @@ export default function Dashboard({
                   {difference > 0
                     ? `${targetName} នៅជំពាក់ប៉ា`
                     : difference < 0
-                    ? `ប៉ាត្រូវបង់លុយឱ្យ ${targetName} បន្ថែម`
-                    : 'ទូទាត់រួចរាល់'}
+                      ? `ប៉ាត្រូវបង់លុយឱ្យ ${targetName} បន្ថែម`
+                      : 'ទូទាត់រួចរាល់'}
                 </span>
               </div>
 
@@ -388,8 +567,8 @@ export default function Dashboard({
                 {difference > 0
                   ? `លុយនៅសល់ត្រូវទារពី ${targetName}`
                   : difference < 0
-                  ? `លុយប៉ាត្រូវទូទាត់ឱ្យ ${targetName}`
-                  : 'សមតុល្យនៅសល់'}
+                    ? `លុយប៉ាត្រូវទូទាត់ឱ្យ ${targetName}`
+                    : 'សមតុល្យនៅសល់'}
               </h2>
             </div>
 
@@ -543,8 +722,8 @@ export default function Dashboard({
                         {b.balance > 0
                           ? 'អ្នកខ្ចីជំពាក់'
                           : b.balance < 0
-                          ? 'ប៉ាត្រូវសងវិញ'
-                          : 'ទូទាត់រួច'}
+                            ? 'ប៉ាត្រូវសងវិញ'
+                            : 'ទូទាត់រួច'}
                       </span>
                     </td>
                   </tr>
@@ -555,124 +734,118 @@ export default function Dashboard({
         </section>
       )}
 
-      {/* 5. CLEAN MONTHLY ARCHIVE VIEW (Collapsible Bottom Section) */}
+      {/* 5. PERMANENT MONTHLY SETTLEMENT HISTORY */}
       <section className="card p-5 sm:p-6 rounded-3xl bg-white shadow-sm border border-slate-200 space-y-4">
-        {/* Collapsible Header */}
-        <button
-          type="button"
-          onClick={() => setIsArchiveOpen((prev) => !prev)}
-          className="w-full flex items-center justify-between text-left group"
-        >
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-slate-100 text-slate-700 flex items-center justify-center">
               <ArchiveIcon className="w-5 h-5 text-slate-600" />
             </div>
             <div>
               <h2 className="text-base sm:text-lg font-black text-slate-800 flex items-center gap-2">
-                <span>ប្រវត្តិទូទាត់ប្រចាំខែ</span>
+                <span>ប្រវត្តិទូទាត់បិទបញ្ជីប្រចាំខែ</span>
                 <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
                   {archivedSettlements.length} ខែ
                 </span>
               </h2>
               <p className="text-xs sm:text-sm text-slate-500">
-                បញ្ជីខែដែលបានទូទាត់រួចរាល់ (ប័ណ្ណសារ)
+                បញ្ជីខែដែលបានទូទាត់បិទបញ្ជីរួចរាល់
               </p>
             </div>
           </div>
+        </div>
 
-          <div className="text-slate-400 group-hover:text-slate-700 transition-colors">
-            {isArchiveOpen ? (
-              <ChevronUpIcon className="w-6 h-6" />
-            ) : (
-              <ChevronDownIcon className="w-6 h-6" />
-            )}
+        {archivedSettlements.length === 0 ? (
+          <div className="py-8 text-center text-slate-400 text-sm font-bold">
+            មិនទាន់មានប្រវត្តិទូទាត់បិទបញ្ជីខែនៅឡើយទេ
           </div>
-        </button>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-slate-500 text-xs font-bold">
+                  <th className="py-2.5 text-left">ខែ</th>
+                  <th className="py-2.5 text-left">ឈ្មោះ</th>
+                  <th className="py-2.5 text-right">ឱ្យខ្ចីសរុប</th>
+                  <th className="py-2.5 text-right">តម្លៃទំនិញសរុប</th>
+                  <th className="py-2.5 text-right">ទឹកប្រាក់ទូទាត់</th>
+                  <th className="py-2.5 text-center">កាលបរិច្ឆេទទូទាត់</th>
+                  <th className="py-2.5 text-center">ស្ថានភាព</th>
+                  <th className="py-2.5 text-right">សកម្មភាព</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {archivedSettlements.map((arch) => (
+                  <tr
+                    key={arch.id || `${arch.month}-${arch.borrower}`}
+                    className="hover:bg-slate-50/50 transition-colors"
+                  >
+                    {/* Month with Calendar Icon */}
+                    <td className="py-3 font-bold text-slate-900 whitespace-nowrap">
+                      <div className="flex items-center gap-1.5">
+                        <CalendarIcon className="w-4 h-4 text-slate-400" />
+                        <span>{arch.month}</span>
+                      </div>
+                    </td>
 
-        {/* Collapsible Content */}
-        {isArchiveOpen && (
-          <div className="pt-3 border-t border-slate-100 space-y-3">
-            {archivedSettlements.length === 0 ? (
-              <div className="py-8 text-center text-slate-400 text-sm font-bold">
-                មិនទាន់មានប្រវត្តិទូទាត់បិទបញ្ជីខែនៅឡើយទេ
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-slate-500 text-xs font-bold">
-                      <th className="py-2.5 text-left">ខែ</th>
-                      {!isSpecificBorrower && (
-                        <th className="py-2.5 text-left">ឈ្មោះ</th>
-                      )}
-                      <th className="py-2.5 text-right">ឱ្យខ្ចីសរុប</th>
-                      <th className="py-2.5 text-right">តម្លៃទំនិញសរុប</th>
-                      <th className="py-2.5 text-right">ទឹកប្រាក់ទូទាត់</th>
-                      <th className="py-2.5 text-center">ស្ថានភាព</th>
-                      <th className="py-2.5 text-right">សកម្មភាព</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {archivedSettlements.map((arch) => (
-                      <tr
-                        key={arch.id || `${arch.month}-${arch.borrower}`}
-                        className="hover:bg-slate-50/50 transition-colors"
-                      >
-                        {/* Month with Calendar Icon */}
-                        <td className="py-3 font-bold text-slate-900 whitespace-nowrap">
-                          <div className="flex items-center gap-1.5">
-                            <CalendarIcon className="w-4 h-4 text-slate-400" />
-                            <span>{arch.month}</span>
-                          </div>
-                        </td>
+                    {/* Borrower */}
+                    <td className="py-3 font-bold text-slate-800 whitespace-nowrap">
+                      {arch.borrower}
+                    </td>
 
-                        {/* Borrower (if viewing all) */}
-                        {!isSpecificBorrower && (
-                          <td className="py-3 font-bold text-slate-800 whitespace-nowrap">
-                            {arch.borrower}
-                          </td>
-                        )}
+                    {/* Total Lent */}
+                    <td className="py-3 text-right tabular-nums text-amber-700 font-bold whitespace-nowrap">
+                      {formatMoney(arch.totalLent)}
+                    </td>
 
-                        {/* Total Lent */}
-                        <td className="py-3 text-right tabular-nums text-amber-700 font-bold whitespace-nowrap">
-                          {formatMoney(arch.totalLent)}
-                        </td>
+                    {/* Total Goods */}
+                    <td className="py-3 text-right tabular-nums text-emerald-700 font-bold whitespace-nowrap">
+                      {formatMoney(arch.totalGoods)}
+                    </td>
 
-                        {/* Total Goods */}
-                        <td className="py-3 text-right tabular-nums text-emerald-700 font-bold whitespace-nowrap">
-                          {formatMoney(arch.totalGoods)}
-                        </td>
+                    {/* Cleared Amount */}
+                    <td className="py-3 text-right tabular-nums font-black text-slate-900 whitespace-nowrap">
+                      {formatMoney(arch.paid)}
+                    </td>
 
-                        {/* Cleared Amount */}
-                        <td className="py-3 text-right tabular-nums font-black text-slate-900 whitespace-nowrap">
-                          {formatMoney(arch.paid)}
-                        </td>
+                    {/* Settlement Date */}
+                    <td className="py-3 text-center tabular-nums text-slate-600 text-xs font-semibold whitespace-nowrap">
+                      {arch.date}
+                    </td>
 
-                        {/* Settled Badge */}
-                        <td className="py-3 text-center whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1 text-xs font-black px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
-                            <CheckCircleIcon className="w-3.5 h-3.5" />
-                            <span>ទូទាត់រួចរាល់</span>
-                          </span>
-                        </td>
+                    {/* Settled Badge */}
+                    <td className="py-3 text-center whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1 text-xs font-black px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        <CheckCircleIcon className="w-3.5 h-3.5" />
+                        <span>ទូទាត់រួចរាល់</span>
+                      </span>
+                    </td>
 
-                        {/* View Details Button */}
-                        <td className="py-3 text-right whitespace-nowrap">
-                          <button
-                            type="button"
-                            onClick={() => setInspectingArchive(arch)}
-                            className="btn-outline min-h-[36px] px-3 py-1 text-xs font-bold flex items-center gap-1.5 rounded-xl text-primary-700 border-primary-200 bg-primary-50/50 hover:bg-primary-100 ml-auto"
-                          >
-                            <EyeIcon className="w-3.5 h-3.5" />
-                            <span>មើលលម្អិត</span>
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                    {/* Actions: View Details + Reopen */}
+                    <td className="py-3 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setInspectingArchive(arch)}
+                          className="btn-outline min-h-[36px] px-3 py-1 text-xs font-bold flex items-center gap-1.5 rounded-xl text-primary-700 border-primary-200 bg-primary-50/50 hover:bg-primary-100"
+                        >
+                          <EyeIcon className="w-3.5 h-3.5" />
+                          <span>មើលលម្អិត</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenReopenMonth(arch)}
+                          className="btn-outline min-h-[36px] px-3 py-1 text-xs font-bold flex items-center gap-1.5 rounded-xl text-amber-700 border-amber-200 bg-amber-50/50 hover:bg-amber-100"
+                        >
+                          <RefreshCwIcon className="w-3.5 h-3.5" />
+                          <span>បើកឡើងវិញ</span>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </section>
@@ -680,14 +853,14 @@ export default function Dashboard({
       {/* MODAL: Settle Month (Exact 2-Variable Active Calculation) */}
       {showSettleModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-slate-100">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-slate-100 max-h-[90vh] overflow-y-auto">
             <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
               <div>
                 <h3 className="text-xl font-black text-slate-900">
-                  ទូទាត់បិទបញ្ជីខែ {settleMonthValue}
+                  ទូទាត់បិទបញ្ជីខែ {targetMonth}
                 </h3>
                 <p className="text-xs font-semibold text-slate-500 mt-0.5">
-                  ឈ្មោះ: {targetName}
+                  ឈ្មោះ: {targetBorrower || 'សូមជ្រើសរើសឈ្មោះ'}
                 </p>
               </div>
               <button
@@ -699,28 +872,68 @@ export default function Dashboard({
               </button>
             </div>
 
-            {/* Exact 2-Variable Active Calculation Card */}
+            {/* Borrower selector if opened from All Borrowers */}
+            {!isSpecificBorrower && (
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">
+                  ជ្រើសរើសឈ្មោះអ្នកត្រូវទូទាត់
+                </label>
+                <select
+                  value={settleBorrower}
+                  onChange={(e) => handleSettleBorrowerChange(e.target.value)}
+                  className="input-field text-base font-bold min-h-[48px]"
+                  required
+                >
+                  <option value="" disabled>-- សូមជ្រើសរើសឈ្មោះ --</option>
+                  {borrowerNames.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Month selector */}
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">
+                ខែដែលត្រូវទូទាត់
+              </label>
+              <select
+                value={settleMonthValue}
+                onChange={(e) => setSettleMonthValue(e.target.value)}
+                className="input-field text-base font-bold min-h-[48px]"
+              >
+                {borrowerAvailableMonths.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Exact 2-Variable Active Calculation Card for Target Month */}
             <div className="rounded-2xl bg-slate-50 p-4 space-y-2.5 text-sm border border-slate-200">
               <div className="flex justify-between items-center">
                 <span className="text-slate-600 font-bold">ឱ្យខ្ចីសរុប:</span>
                 <span className="font-black text-amber-700 text-base tabular-nums">
-                  {formatMoney(totalActiveLent)}
+                  {formatMoney(modalTotalLent)}
                 </span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-slate-600 font-bold">តម្លៃទំនិញសរុប:</span>
                 <span className="font-black text-emerald-700 text-base tabular-nums">
-                  {formatMoney(totalActiveGoods)}
+                  {formatMoney(modalTotalGoods)}
                 </span>
               </div>
               <div className="pt-2 border-t border-slate-200 flex justify-between items-center font-black text-base">
                 <span className="text-slate-800">សមតុល្យត្រូវទូទាត់:</span>
                 <span
                   className={
-                    difference >= 0 ? 'text-amber-800' : 'text-blue-800'
+                    modalNetBalance >= 0 ? 'text-amber-800' : 'text-blue-800'
                   }
                 >
-                  {formatMoney(Math.abs(difference))}
+                  {formatMoney(Math.abs(modalNetBalance))}
                 </span>
               </div>
 
@@ -728,37 +941,28 @@ export default function Dashboard({
               <div className="text-xs font-bold text-slate-600 bg-white p-2.5 rounded-xl border border-slate-200 mt-2">
                 <span>ទិសដៅទូទាត់: </span>
                 <span className="font-black text-slate-900">
-                  {difference > 0
-                    ? `${targetName} ត្រូវសងប៉ា`
-                    : difference < 0
-                    ? `ប៉ាត្រូវបើកលុយឱ្យ ${targetName}`
-                    : 'ទូទាត់រួចរាល់'}
+                  {modalNetBalance > 0
+                    ? `${targetBorrower || 'អ្នកខ្ចី'} ត្រូវសងប៉ា`
+                    : modalNetBalance < 0
+                      ? `ប៉ាត្រូវបើកលុយឱ្យ ${targetBorrower || 'អ្នកខ្ចី'}`
+                      : 'ទូទាត់រួចរាល់'}
                 </span>
               </div>
             </div>
 
+            {/* Subtle Status Notes for Settled or Empty Month */}
+            {isAlreadySettled ? (
+              <div className="p-3 rounded-2xl bg-amber-50 text-amber-800 text-xs sm:text-sm font-bold border border-amber-200 text-center">
+                ខែនេះបានទូទាត់រួចរាល់ហើយ
+              </div>
+            ) : isEmptyMonth ? (
+              <div className="p-3 rounded-2xl bg-slate-100 text-slate-600 text-xs sm:text-sm font-bold border border-slate-200 text-center">
+                ខែនេះមិនមានទឹកប្រាក់ត្រូវទូទាត់ទេ
+              </div>
+            ) : null}
+
             {/* Form */}
             <form onSubmit={handleConfirmSettleMonth} className="space-y-4">
-              {/* Month selector if multiple active months */}
-              {activeMonths.length > 1 && (
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">
-                    ខែដែលត្រូវទូទាត់
-                  </label>
-                  <select
-                    value={settleMonthValue}
-                    onChange={(e) => setSettleMonthValue(e.target.value)}
-                    className="input-field text-base font-bold min-h-[48px]"
-                  >
-                    {activeMonths.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
               {/* Pre-filled Paid Amount */}
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-1">
@@ -799,8 +1003,8 @@ export default function Dashboard({
                 </button>
                 <button
                   type="submit"
-                  disabled={settleSubmitting}
-                  className="btn-primary flex-1 min-h-[48px] text-base font-black shadow-md rounded-2xl flex items-center justify-center gap-1.5"
+                  disabled={settleSubmitting || !canSettle}
+                  className="btn-primary flex-1 min-h-[48px] text-base font-black shadow-md rounded-2xl flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {settleSubmitting ? (
                     'កំពុងទូទាត់...'
@@ -1009,9 +1213,9 @@ export default function Dashboard({
                   disabled={
                     reopenSubmitting ||
                     normalizeBorrowerName(reopenTypedName).toLowerCase() !==
-                      normalizeBorrowerName(
-                        reopenModalData.borrower,
-                      ).toLowerCase()
+                    normalizeBorrowerName(
+                      reopenModalData.borrower,
+                    ).toLowerCase()
                   }
                   className="btn-danger flex-1 min-h-[48px] text-base font-bold disabled:opacity-40 shadow-md rounded-2xl"
                 >

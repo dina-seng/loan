@@ -10,6 +10,7 @@ import {
   findBorrowerNameMatch,
   todayStr,
 } from "../utils";
+import { PackageIcon, CheckIcon, AlertCircleIcon, XIcon } from "./Icons";
 
 const ADD_BORROWER_OPTION = "__add_new_borrower__";
 
@@ -160,7 +161,7 @@ export default function ProductForm({
         err.code === "unknown_action"
       ) {
         setError(
-          'Google Apps Script មិនទាន់ស្គាល់ "add_product" ទេ (unknown_action)។ សូមចម្លង Code.gs ទៅដាក់ក្នុង Google Sheet Apps Script រួចចុច Deploy → Manage deployments → Edit ✏️ → ជ្រើសរើស "New version" ហើយចុច Deploy ជាការស្រេច។',
+          'Google Apps Script មិនទាន់ស្គាល់ "add_product" ទេ (unknown_action)។ សូមចម្លង Code.gs ទៅដាក់ក្នុង Google Sheet Apps Script រួចចុច Deploy → Manage deployments → Edit → ជ្រើសរើស "New version" ហើយចុច Deploy ជាការស្រេច។',
         );
       } else {
         setError(
@@ -184,7 +185,7 @@ export default function ProductForm({
         <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
           <div>
             <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-              <span className="text-emerald-600 text-xl">📦</span>
+              <PackageIcon className="w-5 h-5 text-emerald-600" />
               <span>កត់ត្រាទិញផលិតផល (Add Product)</span>
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -197,7 +198,7 @@ export default function ProductForm({
             className="flex h-10 w-10 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-primary-500"
             aria-label="បិទ (Close)"
           >
-            ✕
+            <XIcon className="w-5 h-5" />
           </button>
         </div>
 
@@ -205,7 +206,7 @@ export default function ProductForm({
         {success && (
           <div className="mb-4 rounded-xl bg-emerald-50 border border-emerald-300 p-3 text-emerald-800 text-sm font-semibold flex items-center justify-between gap-2 shadow-sm animate-pulse">
             <div className="flex items-center gap-2">
-              <span className="text-emerald-600 text-lg">✓</span>
+              <CheckIcon className="w-4 h-4 text-emerald-600" />
               <span>
                 រក្សាទុកផលិតផលបានជោគជ័យ! រួចរាល់សម្រាប់ទំនិញបន្ទាប់ (Ready for
                 next)
@@ -224,14 +225,14 @@ export default function ProductForm({
         {/* Error Banner */}
         {error && (
           <div className="mb-4 rounded-xl bg-red-50 border border-red-300 p-3 text-red-800 text-sm flex items-start gap-2 shadow-sm">
-            <span className="text-red-600 font-bold mt-0.5">⚠️</span>
+            <AlertCircleIcon className="w-5 h-5 text-red-600 shrink-0" />
             <div className="flex-1 font-medium">{error}</div>
             <button
               type="button"
               onClick={() => setError("")}
               className="text-xs text-red-500 font-bold hover:underline"
             >
-              ✕
+              <XIcon className="w-4 h-4" />
             </button>
           </div>
         )}
@@ -325,10 +326,13 @@ export default function ProductForm({
                 )}
                 {similarBorrower && (
                   <div className="rounded-lg bg-amber-50 p-2.5 border border-amber-200 text-xs text-amber-900 space-y-1.5">
-                    <p>
-                      ⚠️ ឈ្មោះនេះស្រដៀងនឹង{" "}
-                      <strong>"{similarBorrower.borrower}"</strong>{" "}
-                      ដែលមានស្រាប់។
+                    <p className="flex items-center gap-1.5">
+                      <AlertCircleIcon className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>
+                        ឈ្មោះនេះស្រដៀងនឹង{" "}
+                        <strong>"{similarBorrower.borrower}"</strong>{" "}
+                        ដែលមានស្រាប់។
+                      </span>
                     </p>
                     <div className="flex gap-2">
                       <button

@@ -176,5 +176,29 @@ describe('Category 8: Sheet Consistency & Worked Example', () => {
       expect(cleanTotals.totalLent).toBe(1_000_000);
       expect(cleanTotals.totalRepaid).toBe(0);
     });
+
+    it('guarantees zero emojis in UI source code and apps-script', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const emojiRegex = /[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/u;
+
+      const scanDirectory = (dir: string) => {
+        const files = fs.readdirSync(dir);
+        for (const file of files) {
+          const fullPath = path.join(dir, file);
+          const stat = fs.statSync(fullPath);
+          if (stat.isDirectory()) {
+            scanDirectory(fullPath);
+          } else if (/\.(jsx?|tsx?|gs)$/.test(file)) {
+            const content = fs.readFileSync(fullPath, 'utf-8');
+            const match = content.match(emojiRegex);
+            expect(match, `Emoji found in ${fullPath}: ${match ? match[0] : ''}`).toBeNull();
+          }
+        }
+      };
+
+      scanDirectory(path.resolve(__dirname, '../../src'));
+      scanDirectory(path.resolve(__dirname, '../../apps-script'));
+    });
   });
 });

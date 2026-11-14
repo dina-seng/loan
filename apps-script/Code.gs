@@ -1,6 +1,6 @@
 /**
  * Khmer Lending Management System & Product Offset Tracker Backend
- * Google Apps Script (Code.gs)
+ * Google Apps Script (Code.gs) - Simplified 2-Feature & Monthly Clear Edition
  */
 
 const TAB_TX = "Transactions";
@@ -15,6 +15,7 @@ const HEAD_TX = [
   "ចំនួនទឹកប្រាក់",
   "កំណត់សម្គាល់",
   "ID",
+  "Status",
 ];
 
 const HEAD_PROD = [
@@ -26,16 +27,17 @@ const HEAD_PROD = [
   "Unit price",
   "Total",
   "Note",
+  "Status",
 ];
 
 const HEAD_SETTLE = [
   "ID",
   "Month",
   "Borrower",
-  "Balance before",
-  "Paid",
+  "Total Lent",
+  "Total Goods",
+  "Settled Amount",
   "Direction",
-  "Carried over",
   "Date",
 ];
 
@@ -54,6 +56,13 @@ function sheetTx_() {
     s.setFrozenRows(1);
     s.getRange("B:B").setNumberFormat("@");
     s.getRange("E:E").setNumberFormat('#,##0"៛"');
+    s.getRange("H:H").setNumberFormat("@");
+  } else if (s.getLastRow() >= 1) {
+    // If sheet exists, ensure column H (Status) header exists
+    if (s.getLastColumn() < HEAD_TX.length || !s.getRange(1, 8).getValue()) {
+      s.getRange(1, 8).setValue("Status");
+      s.getRange("H:H").setNumberFormat("@");
+    }
   }
   return s;
 }
@@ -68,7 +77,13 @@ function sheetProd_() {
     s.getRange("A:D").setNumberFormat("@");
     s.getRange("E:E").setNumberFormat("#,##0.##");
     s.getRange("F:G").setNumberFormat('#,##0"៛"');
-    s.getRange("H:H").setNumberFormat("@");
+    s.getRange("H:I").setNumberFormat("@");
+  } else if (s.getLastRow() >= 1) {
+    // If sheet exists, ensure column I (Status) header exists
+    if (s.getLastColumn() < HEAD_PROD.length || !s.getRange(1, 9).getValue()) {
+      s.getRange(1, 9).setValue("Status");
+      s.getRange("I:I").setNumberFormat("@");
+    }
   }
   return s;
 }
@@ -81,10 +96,14 @@ function sheetSettle_() {
     s.appendRow(HEAD_SETTLE);
     s.setFrozenRows(1);
     s.getRange("A:C").setNumberFormat("@");
-    s.getRange("D:E").setNumberFormat('#,##0"៛"');
-    s.getRange("F:F").setNumberFormat("@");
-    s.getRange("G:G").setNumberFormat('#,##0"៛"');
-    s.getRange("H:H").setNumberFormat("@");
+    s.getRange("D:F").setNumberFormat('#,##0"៛"');
+    s.getRange("G:H").setNumberFormat("@");
+  } else if (s.getLastRow() >= 1) {
+    // If header exists but is old schema, update header row seamlessly
+    const currentHeaders = s.getRange(1, 1, 1, Math.min(s.getLastColumn(), HEAD_SETTLE.length)).getValues()[0];
+    if (currentHeaders.length < HEAD_SETTLE.length || String(currentHeaders[3]).toLowerCase().includes("balance")) {
+      s.getRange(1, 1, 1, HEAD_SETTLE.length).setValues([HEAD_SETTLE]);
+    }
   }
   return s;
 }
@@ -107,6 +126,7 @@ function sanitizeCell_(val) {
   return val == null ? "" : val;
 }
 
+// Handles YYYY-MM-DD, MM/DD/YYYY, DD/MM/YYYY, and Date objects safely
 function formatDateStr_(val) {
   if (!val) return "";
   if (val instanceof Date) {
@@ -114,6 +134,18 @@ function formatDateStr_(val) {
   }
   const str = String(val).trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+
+  // Match MM/DD/YYYY or DD/MM/YYYY
+  const slashMatch = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slashMatch) {
+    let p1 = parseInt(slashMatch[1], 10);
+    let p2 = parseInt(slashMatch[2], 10);
+    const y = slashMatch[3];
+    const m = p1 > 12 ? p2 : p1;
+    const d = p1 > 12 ? p1 : p2;
+    return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  }
+
   const d = new Date(str);
   if (!isNaN(d.getTime())) {
     return Utilities.formatDate(d, "Asia/Phnom_Penh", "yyyy-MM-dd");
@@ -144,24 +176,31 @@ function isMonthSettled_(borrower, dateStr) {
 
   const rows = s.getRange(2, 1, s.getLastRow() - 1, 3).getValues();
   const normB = normalizeBorrowerName_(borrower).toLowerCase();
+  const isAll =
+    normB === "all" ||
+    normB === "__all__" ||
+    normB === "បង្ហាញទាំងអស់" ||
+    normB === "ទាំងអស់";
 
-  return rows.some(
-    (r) =>
-      String(r[1]) === month &&
-      normalizeBorrowerName_(r[2]).toLowerCase() === normB,
-  );
+  return rows.some((r) => {
+    const rMonth = String(r[1]).trim();
+    const rB = normalizeBorrowerName_(r[2]).toLowerCase();
+    const rIsAll =
+      rB === "all" ||
+      rB === "__all__" ||
+      rB === "បង្ហាញទាំងអស់" ||
+      rB === "ទាំងអស់";
+    return rMonth === month && (isAll || rIsAll || rB === normB);
+  });
 }
 
-/**
- * Health check endpoint (never exposes data)
- */
 function doGet(e) {
-  return out_({ ok: true, message: "online" });
+  return out_({ ok: true, message: "online", version: "2.2.0" });
 }
 
 function doPost(e) {
+  let hasLock = false;
   const lock = LockService.getScriptLock();
-  lock.waitLock(10000);
 
   try {
     const d = JSON.parse(e.postData.contents);
@@ -175,6 +214,23 @@ function doPost(e) {
 
     if (d.username !== appUser || d.password !== appPass) {
       return out_({ ok: false, error: "unauthorized" });
+    }
+
+    const WRITE_ACTIONS = [
+      "add",
+      "delete",
+      "add_product",
+      "delete_product",
+      "settle_month",
+      "reopen_month",
+      "rename_borrower",
+    ];
+
+    if (WRITE_ACTIONS.includes(d.action)) {
+      hasLock = lock.tryLock(5000);
+      if (!hasLock) {
+        return out_({ ok: false, error: "server_busy_try_again" });
+      }
     }
 
     // 1. LIST TRANSACTIONS
@@ -191,25 +247,31 @@ function doPost(e) {
 
       return out_({
         ok: true,
-        transactions: rows.map((r) => ({
-          id: String(r[6]),
-          date: formatDateStr_(r[1]),
-          borrower: r[2],
-          type: r[3],
-          amount: Number(r[4]) || 0,
-          note: r[5] || "",
-        })),
+        transactions: rows.map((r) => {
+          const status = r.length >= 8 && r[7] ? String(r[7]).trim() : "Active";
+          return {
+            id: String(r[6]),
+            date: formatDateStr_(r[1]),
+            borrower: r[2],
+            type: r[3],
+            amount: Number(r[4]) || 0,
+            note: r[5] || "",
+            status,
+            settled: status.startsWith("Settled"),
+          };
+        }),
       });
     }
 
-    // 2. ADD TRANSACTION
+    // 2. ADD TRANSACTION (Single Lending or Repayment)
     if (d.action === "add") {
       const s = sheetTx_();
       const borrower = normalizeBorrowerName_(d.borrower);
       if (!borrower) return out_({ ok: false, error: "invalid_borrower" });
 
       const allowedTypes = ["Lend", "Repay", "Refund"];
-      if (!allowedTypes.includes(d.type)) {
+      const txType = d.type || "Lend";
+      if (!allowedTypes.includes(txType)) {
         return out_({ ok: false, error: "invalid_type" });
       }
 
@@ -233,7 +295,6 @@ function doPost(e) {
 
       const id = String(d.id || Utilities.getUuid());
 
-      // Idempotency: check if ID exists
       if (s.getLastRow() > 1) {
         const ids = s
           .getRange(2, 7, s.getLastRow() - 1, 1)
@@ -248,10 +309,11 @@ function doPost(e) {
         s.getLastRow(),
         dateStr,
         sanitizeCell_(borrower),
-        d.type,
+        txType,
         amount,
         sanitizeCell_(d.note || ""),
         id,
+        "Active",
       ]);
 
       return out_({ ok: true, id });
@@ -277,7 +339,6 @@ function doPost(e) {
 
       if (targetRowIndex < 2) return out_({ ok: false, error: "not_found" });
 
-      // Month lock check
       const rowDate = formatDateStr_(targetRow[1]);
       const rowBorrower = targetRow[2];
       if (isMonthSettled_(rowBorrower, rowDate)) {
@@ -303,8 +364,8 @@ function doPost(e) {
       return out_({
         ok: true,
         products: rawRows.map((r) => {
-          // Backward compatibility for 6-column sheet
           const hasItemCol = r.length >= 8;
+          const status = r.length >= 9 && r[8] ? String(r[8]).trim() : "Active";
           return {
             id: String(r[0]),
             date: formatDateStr_(r[1]),
@@ -314,12 +375,14 @@ function doPost(e) {
             unitPrice: Number(hasItemCol ? r[5] : r[4]) || 0,
             total: Number(hasItemCol ? r[6] : r[5]) || 0,
             note: hasItemCol ? (r[7] || "") : "",
+            status,
+            settled: status.startsWith("Settled"),
           };
         }),
       });
     }
 
-    // 5. ADD PRODUCT
+    // 5. ADD PRODUCT (Item Name Intentionally Blank/Optional)
     if (d.action === "add_product") {
       const s = sheetProd_();
       const borrower = normalizeBorrowerName_(d.borrower);
@@ -351,7 +414,6 @@ function doPost(e) {
       const total = Math.round(quantity * unitPrice);
       const id = String(d.id || Utilities.getUuid());
 
-      // Idempotency: check if product ID exists
       if (s.getLastRow() > 1) {
         const ids = s
           .getRange(2, 1, s.getLastRow() - 1, 1)
@@ -362,15 +424,17 @@ function doPost(e) {
         }
       }
 
+      const itemVal = sanitizeCell_(d.item || d.itemName || "");
       s.appendRow([
         id,
         dateStr,
         sanitizeCell_(borrower),
-        sanitizeCell_(d.item || ""),
+        itemVal, // Empty string for clean 2-variable mode
         quantity,
         unitPrice,
         total,
         sanitizeCell_(d.note || ""),
+        "Active",
       ]);
 
       return out_({ ok: true, id, total });
@@ -406,7 +470,7 @@ function doPost(e) {
       return out_({ ok: true });
     }
 
-    // 7. LIST SETTLEMENTS
+    // 7. LIST SETTLEMENTS (Supports both legacy and new 2-variable schemas)
     if (d.action === "list_settlements") {
       const s = sheetSettle_();
       if (s.getLastRow() <= 1) {
@@ -420,113 +484,274 @@ function doPost(e) {
 
       return out_({
         ok: true,
-        settlements: rawRows.map((r) => ({
-          id: String(r[0]),
-          month: String(r[1]),
-          borrower: r[2],
-          balanceBefore: Number(r[3]) || 0,
-          paid: Number(r[4]) || 0,
-          direction: String(r[5]),
-          carriedOver: Number(r[6]) || 0,
-          date: formatDateStr_(r[7]),
-        })),
+        settlements: rawRows.map((r) => {
+          // Detect schema: If r[5] is text direction (old schema) vs number paid (new schema)
+          const isOldSchema = typeof r[5] === "string" && ["borrower_pays_dad", "dad_pays_borrower", "cleared"].includes(r[5]);
+
+          const totalLent = isOldSchema ? (Number(r[3]) || 0) : (Number(r[3]) || 0);
+          const totalGoods = isOldSchema ? 0 : (Number(r[4]) || 0);
+          const paid = isOldSchema ? (Number(r[4]) || 0) : (Number(r[5]) || 0);
+          const direction = isOldSchema ? String(r[5] || "cleared") : String(r[6] || "cleared");
+          const dateStr = formatDateStr_(isOldSchema ? r[7] : r[7]);
+
+          return {
+            id: String(r[0]),
+            month: String(r[1]),
+            borrower: r[2],
+            totalLent,
+            totalGoods,
+            balanceBefore: totalLent - totalGoods,
+            paid,
+            direction,
+            carriedOver: 0,
+            date: dateStr,
+            status: "ទូទាត់រួចរាល់",
+          };
+        }),
       });
     }
 
-    // 8. SETTLE MONTH
+    // 8. SETTLE MONTH (Pure 2-Variable: Total Lent - Total Goods, with persistent Row Status)
     if (d.action === "settle_month") {
       const sSettle = sheetSettle_();
       const sTx = sheetTx_();
+      const sProd = sheetProd_();
 
-      const borrower = normalizeBorrowerName_(d.borrower);
-      const month = String(d.month || "").trim();
-      const dateStr = formatDateStr_(d.date);
-      const paid = Number(d.paid) || 0;
-      const balanceBefore = Number(d.balanceBefore) || 0;
-      const carriedOver = Number(d.carriedOver) || 0;
-      const direction = String(d.direction || "cleared");
-      const id = String(d.id || Utilities.getUuid());
+      const rawBorrower = String(d.borrower || "").trim();
+      const isAll =
+        !rawBorrower ||
+        rawBorrower === "ALL" ||
+        rawBorrower === "__all__" ||
+        rawBorrower === "បង្ហាញទាំងអស់" ||
+        rawBorrower === "ទាំងអស់";
+      const borrower = isAll ? "បង្ហាញទាំងអស់" : normalizeBorrowerName_(rawBorrower);
 
-      if (!borrower || !/^\d{4}-\d{2}$/.test(month) || !isValidDateStr_(dateStr)) {
-        return out_({ ok: false, error: "invalid_settlement_data" });
+      let dateStr = formatDateStr_(d.date);
+      if (!isValidDateStr_(dateStr)) {
+        dateStr = formatDateStr_(new Date());
+      }
+      let month = String(d.month || "").trim();
+      if (!/^\d{4}-\d{2}$/.test(month)) {
+        month = dateStr.slice(0, 7);
       }
 
-      // Record in Settlements sheet
+      if (!isAll && !borrower) {
+        return out_({
+          ok: false,
+          error: "invalid_borrower",
+          message: "សូមជ្រើសរើសឈ្មោះអ្នកខ្ចី",
+        });
+      }
+
+      if (!/^\d{4}-\d{2}$/.test(month) || !isValidDateStr_(dateStr)) {
+        return out_({
+          ok: false,
+          error: "invalid_settlement_data",
+          debug: { borrower, month, dateStr },
+        });
+      }
+
+      // Prevent duplicate settlement for same borrower + month
+      if (isMonthSettled_(borrower, month + "-01")) {
+        return out_({ ok: false, error: "already_settled" });
+      }
+
+      const totalLent = Number(d.totalLent != null ? d.totalLent : d.balanceBefore) || 0;
+      const totalGoods = Number(d.totalGoods) || 0;
+      const paid = Number(d.paid != null ? d.paid : Math.abs(totalLent - totalGoods)) || 0;
+      const direction = String(
+        d.direction ||
+          (totalLent > totalGoods
+            ? "borrower_pays_dad"
+            : totalLent < totalGoods
+            ? "dad_pays_borrower"
+            : "cleared")
+      );
+      const settlementId = String(d.id || Utilities.getUuid());
+      const settledTag = "Settled:" + settlementId;
+
+      const normBorrowerLower = borrower.toLowerCase();
+
+      // Update Transactions Status column (Col 8)
+      if (sTx.getLastRow() > 1) {
+        const numRows = sTx.getLastRow() - 1;
+        if (sTx.getLastColumn() < 8) {
+          sTx.getRange(1, 8).setValue("Status");
+        }
+        const txRange = sTx.getRange(2, 1, numRows, 8);
+        const txValues = txRange.getValues();
+        let txModified = false;
+
+        for (let i = 0; i < txValues.length; i++) {
+          const rowDate = formatDateStr_(txValues[i][1]);
+          const rowMonth = rowDate.slice(0, 7);
+          const rowB = normalizeBorrowerName_(txValues[i][2]).toLowerCase();
+          const rowStatus = String(txValues[i][7] || "Active").trim();
+
+          const borrowerMatches = isAll || rowB === normBorrowerLower;
+          const monthMatches = !month || rowMonth === month;
+          const isRowActive = !rowStatus || rowStatus === "Active";
+
+          if (borrowerMatches && monthMatches && isRowActive) {
+            txValues[i][7] = settledTag;
+            txModified = true;
+          }
+        }
+        if (txModified) {
+          txRange.setValues(txValues);
+        }
+      }
+
+      // Update Products Status column (Col 9)
+      if (sProd.getLastRow() > 1) {
+        const numRows = sProd.getLastRow() - 1;
+        if (sProd.getLastColumn() < 9) {
+          sProd.getRange(1, 9).setValue("Status");
+        }
+        const prodRange = sProd.getRange(2, 1, numRows, 9);
+        const prodValues = prodRange.getValues();
+        let prodModified = false;
+
+        for (let i = 0; i < prodValues.length; i++) {
+          const rowDate = formatDateStr_(prodValues[i][1]);
+          const rowMonth = rowDate.slice(0, 7);
+          const rowB = normalizeBorrowerName_(prodValues[i][2]).toLowerCase();
+          const rowStatus = String(prodValues[i][8] || "Active").trim();
+
+          const borrowerMatches = isAll || rowB === normBorrowerLower;
+          const monthMatches = !month || rowMonth === month;
+          const isRowActive = !rowStatus || rowStatus === "Active";
+
+          if (borrowerMatches && monthMatches && isRowActive) {
+            prodValues[i][8] = settledTag;
+            prodModified = true;
+          }
+        }
+        if (prodModified) {
+          prodRange.setValues(prodValues);
+        }
+      }
+
+      // Append row to Settlements
       sSettle.appendRow([
-        id,
+        settlementId,
         month,
         sanitizeCell_(borrower),
-        balanceBefore,
+        totalLent,
+        totalGoods,
         paid,
         direction,
-        carriedOver,
         dateStr,
       ]);
 
-      // If paid amount > 0, record corresponding Repay / Refund row in Transactions
-      if (paid > 0) {
-        const txType =
-          direction === "borrower_pays_dad"
-            ? "Repay"
-            : direction === "dad_pays_borrower"
-            ? "Refund"
-            : "Repay";
-
-        const txId = Utilities.getUuid();
-        sTx.appendRow([
-          sTx.getLastRow(),
-          dateStr,
-          sanitizeCell_(borrower),
-          txType,
-          paid,
-          sanitizeCell_("Month settlement " + month),
-          txId,
-        ]);
-      }
-
-      return out_({ ok: true, id });
+      return out_({ ok: true, id: settlementId, month });
     }
 
-    // 9. REOPEN MONTH
+    // 9. REOPEN MONTH (Delete from Settlements & restore Transactions/Products to Active)
     if (d.action === "reopen_month") {
       const sSettle = sheetSettle_();
       const sTx = sheetTx_();
-      const borrower = normalizeBorrowerName_(d.borrower);
+      const sProd = sheetProd_();
+
+      const targetId = String(d.id || "").trim();
+      const rawBorrower = String(d.borrower || "").trim();
+      const isAll =
+        !rawBorrower ||
+        rawBorrower === "ALL" ||
+        rawBorrower === "__all__" ||
+        rawBorrower === "បង្ហាញទាំងអស់" ||
+        rawBorrower === "ទាំងអស់";
+      const borrower = isAll ? "" : normalizeBorrowerName_(rawBorrower);
       const month = String(d.month || "").trim();
 
-      if (!borrower || !month) {
+      if (!targetId && (!borrower || !month)) {
         return out_({ ok: false, error: "invalid_reopen_data" });
       }
 
-      // Delete from Settlements
+      // 1. Delete matching row from Settlements
+      let foundSettlementId = targetId;
       if (sSettle.getLastRow() > 1) {
         const rows = sSettle
-          .getRange(2, 1, sSettle.getLastRow() - 1, 3)
+          .getRange(2, 1, sSettle.getLastRow() - 1, Math.max(sSettle.getLastColumn(), 3))
           .getValues();
         for (let i = rows.length - 1; i >= 0; i--) {
-          if (
-            String(rows[i][1]) === month &&
-            normalizeBorrowerName_(rows[i][2]).toLowerCase() ===
-              borrower.toLowerCase()
-          ) {
+          const rowId = String(rows[i][0]).trim();
+          const rowMonth = String(rows[i][1]).trim();
+          const rowB = normalizeBorrowerName_(rows[i][2]).toLowerCase();
+
+          const idMatches = targetId && rowId === targetId;
+          const monthBorrowerMatches =
+            !targetId &&
+            rowMonth === month &&
+            (isAll || rowB === borrower.toLowerCase());
+
+          if (idMatches || monthBorrowerMatches) {
+            if (!foundSettlementId) foundSettlementId = rowId;
             sSettle.deleteRow(i + 2);
           }
         }
       }
 
-      // Delete automatic settlement transaction if present
+      const settledTag = foundSettlementId ? "Settled:" + foundSettlementId : "";
+
+      // 2. Restore Transactions back to Active
       if (sTx.getLastRow() > 1) {
-        const txRows = sTx
-          .getRange(2, 1, sTx.getLastRow() - 1, 6)
-          .getValues();
-        const expectedNote = "Month settlement " + month;
-        for (let i = txRows.length - 1; i >= 0; i--) {
-          if (
-            normalizeBorrowerName_(txRows[i][2]).toLowerCase() ===
-              borrower.toLowerCase() &&
-            String(txRows[i][5]).trim() === expectedNote
-          ) {
-            sTx.deleteRow(i + 2);
+        const numRows = sTx.getLastRow() - 1;
+        if (sTx.getLastColumn() >= 8) {
+          const txRange = sTx.getRange(2, 1, numRows, 8);
+          const txValues = txRange.getValues();
+          let txModified = false;
+
+          for (let i = 0; i < txValues.length; i++) {
+            const rowStatus = String(txValues[i][7] || "").trim();
+            const rowMonth = formatDateStr_(txValues[i][1]).slice(0, 7);
+            const rowB = normalizeBorrowerName_(txValues[i][2]).toLowerCase();
+
+            const statusMatchesId = settledTag && rowStatus === settledTag;
+            const fallbackMatches =
+              !settledTag &&
+              rowStatus.startsWith("Settled") &&
+              rowMonth === month &&
+              (isAll || rowB === borrower.toLowerCase());
+
+            if (statusMatchesId || fallbackMatches) {
+              txValues[i][7] = "Active";
+              txModified = true;
+            }
+          }
+          if (txModified) {
+            txRange.setValues(txValues);
+          }
+        }
+      }
+
+      // 3. Restore Products back to Active
+      if (sProd.getLastRow() > 1) {
+        const numRows = sProd.getLastRow() - 1;
+        if (sProd.getLastColumn() >= 9) {
+          const prodRange = sProd.getRange(2, 1, numRows, 9);
+          const prodValues = prodRange.getValues();
+          let prodModified = false;
+
+          for (let i = 0; i < prodValues.length; i++) {
+            const rowStatus = String(prodValues[i][8] || "").trim();
+            const rowMonth = formatDateStr_(prodValues[i][1]).slice(0, 7);
+            const rowB = normalizeBorrowerName_(prodValues[i][2]).toLowerCase();
+
+            const statusMatchesId = settledTag && rowStatus === settledTag;
+            const fallbackMatches =
+              !settledTag &&
+              rowStatus.startsWith("Settled") &&
+              rowMonth === month &&
+              (isAll || rowB === borrower.toLowerCase());
+
+            if (statusMatchesId || fallbackMatches) {
+              prodValues[i][8] = "Active";
+              prodModified = true;
+            }
+          }
+          if (prodModified) {
+            prodRange.setValues(prodValues);
           }
         }
       }
@@ -543,7 +768,6 @@ function doPost(e) {
       let count = 0;
       const fromKey = from.toLowerCase();
 
-      // Update Transactions
       const sTx = sheetTx_();
       if (sTx.getLastRow() > 1) {
         const vals = sTx.getRange(2, 3, sTx.getLastRow() - 1, 1).getValues();
@@ -556,7 +780,6 @@ function doPost(e) {
         sTx.getRange(2, 3, vals.length, 1).setValues(vals);
       }
 
-      // Update Products
       const sProd = sheetProd_();
       if (sProd.getLastRow() > 1) {
         const vals = sProd
@@ -571,7 +794,6 @@ function doPost(e) {
         sProd.getRange(2, 3, vals.length, 1).setValues(vals);
       }
 
-      // Update Settlements
       const sSettle = sheetSettle_();
       if (sSettle.getLastRow() > 1) {
         const vals = sSettle
@@ -593,163 +815,10 @@ function doPost(e) {
   } catch (err) {
     return out_({ ok: false, error: String(err) });
   } finally {
-    lock.releaseLock();
+    if (hasLock) {
+      try {
+        lock.releaseLock();
+      } catch (ignored) {}
+    }
   }
-}
-
-/**
- * Setup Summary Sheet with formula:
- * Settlement = Lend - Repay - ProductValue + Refund
- * Non-private name so it can be run directly from Apps Script run menu.
- */
-function setupSummary() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const t = sheetTx_();
-  const p = sheetProd_();
-
-  let s = ss.getSheetByName("Summary");
-  if (!s) s = ss.insertSheet("Summary");
-  s.clear();
-
-  const T = "Transactions!";
-  const P = "Products!";
-  const lent = `SUMIFS(${T}E:E,${T}D:D,"Lend")`;
-  const paid = `SUMIFS(${T}E:E,${T}D:D,"Repay")`;
-  const refund = `SUMIFS(${T}E:E,${T}D:D,"Refund")`;
-  const prodVal = `SUM(${P}G:G)`;
-
-  s.getRange("A1").setValue("📊 សង្ខេបបំណុល និងការទូទាត់ទំនិញ (Summary)");
-  s.getRange("A3:B8").setValues([
-    ["ប្រាក់បានឱ្យខ្ចីសរុប (Total Lent)", "=" + lent],
-    ["ប្រាក់បានទទួលសងសរុប (Total Repaid)", "=" + paid],
-    ["ប្រាក់បានសងត្រឡប់ (Total Refunded)", "=" + refund],
-    ["តម្លៃទំនិញបានផ្គត់ផ្គង់ (Total Products)", "=" + prodVal],
-    [
-      "សមតុល្យទូទាត់សរុប (Net Settlement = Lend - Repay - Prod + Refund)",
-      "=B3-B4-B6+B5",
-    ],
-    [
-      "កាលបរិច្ឆេទទទួលសងចុងក្រោយ (Last Repayment)",
-      `=IFERROR(INDEX(SORT(FILTER(${T}B2:B,${T}D2:D="Repay"),1,FALSE),1),"-")`,
-    ],
-  ]);
-
-  // Borrower Summary Header
-  s.getRange("A10:H10").setValues([
-    [
-      "ឈ្មោះអ្នកខ្ចី (Borrower)",
-      "ប្រាក់បានខ្ចី (Lent)",
-      "ប្រាក់បានសង (Repaid)",
-      "ប្រាក់បានសងត្រឡប់ (Refunded)",
-      "តម្លៃទំនិញ (Products)",
-      "សមតុល្យទូទាត់ (Settlement)",
-      "ស្ថានភាព (Status)",
-      "ចំនួនដង (Count)",
-    ],
-  ]);
-
-  s.getRange("A11").setFormula(
-    `=IFERROR(UNIQUE(FILTER(${T}C2:C,${T}C2:C<>"")),"")`,
-  );
-  s.getRange("B11").setFormula(
-    `=ARRAYFORMULA(IF(A11:A="","",SUMIFS(${T}E:E,${T}D:D,"Lend",${T}C:C,A11:A)))`,
-  );
-  s.getRange("C11").setFormula(
-    `=ARRAYFORMULA(IF(A11:A="","",SUMIFS(${T}E:E,${T}D:D,"Repay",${T}C:C,A11:A)))`,
-  );
-  s.getRange("D11").setFormula(
-    `=ARRAYFORMULA(IF(A11:A="","",SUMIFS(${T}E:E,${T}D:D,"Refund",${T}C:C,A11:A)))`,
-  );
-  s.getRange("E11").setFormula(
-    `=ARRAYFORMULA(IF(A11:A="","",SUMIF(${P}C:C,A11:A,${P}G:G)))`,
-  );
-  // Settlement = Lend - Repay - Prod + Refund = B - C - E + D
-  s.getRange("F11").setFormula(
-    `=ARRAYFORMULA(IF(A11:A="","",B11:B-C11:C-E11:E+D11:D))`,
-  );
-  s.getRange("G11").setFormula(
-    `=ARRAYFORMULA(IF(A11:A="","",IF(F11:F>0,"ជំពាក់ប៉ា (Borrower owes)",IF(F11:F<0,"ប៉ាសងវិញ (Dad owes)","ទូទាត់រួច (Cleared)"))))`,
-  );
-  s.getRange("H11").setFormula(
-    `=ARRAYFORMULA(IF(A11:A="","",COUNTIF(${T}C:C,A11:A)))`,
-  );
-
-  // Monthly Table Header
-  s.getRange("J10:P10").setValues([
-    [
-      "ខែ (Month)",
-      "ឱ្យខ្ចី (Lent)",
-      "ទទួលសង (Repaid)",
-      "ទំនិញ (Products)",
-      "សងត្រឡប់ (Refunded)",
-      "សមតុល្យខែ (Net Month)",
-      "សមតុល្យបន្ត (Running)",
-    ],
-  ]);
-
-  s.getRange("J11").setFormula(
-    `=IFERROR(SORT(UNIQUE(ARRAYFORMULA(LEFT(FILTER(${T}B2:B,${T}B2:B<>""),7))),1,FALSE),"")`,
-  );
-  s.getRange("K11").setFormula(
-    `=ARRAYFORMULA(IF(J11:J="","",SUMIFS(${T}E:E,${T}D:D,"Lend",${T}B:B,J11:J&"*")))`,
-  );
-  s.getRange("L11").setFormula(
-    `=ARRAYFORMULA(IF(J11:J="","",SUMIFS(${T}E:E,${T}D:D,"Repay",${T}B:B,J11:J&"*")))`,
-  );
-  s.getRange("M11").setFormula(
-    `=ARRAYFORMULA(IF(J11:J="","",SUMIFS(${P}G:G,${P}B:B,J11:J&"*")))`,
-  );
-  s.getRange("N11").setFormula(
-    `=ARRAYFORMULA(IF(J11:J="","",SUMIFS(${T}E:E,${T}D:D,"Refund",${T}B:B,J11:J&"*")))`,
-  );
-  s.getRange("O11").setFormula(
-    `=ARRAYFORMULA(IF(J11:J="","",K11:K-L11:L-M11:M+N11:N))`,
-  );
-
-  // Styling & Formatting
-  s.getRange("A1").setFontSize(16).setFontWeight("bold");
-  s.getRange("A3:A8").setFontWeight("bold");
-  s.getRange("B3:B7")
-    .setNumberFormat('#,##0" ៛"')
-    .setFontSize(12)
-    .setFontWeight("bold");
-  s.getRange("B7").setFontColor("#b45309");
-
-  s.getRange("A10:H10")
-    .setBackground("#163a5f")
-    .setFontColor("#fff")
-    .setFontWeight("bold");
-  s.getRange("J10:P10")
-    .setBackground("#163a5f")
-    .setFontColor("#fff")
-    .setFontWeight("bold");
-
-  s.getRange("B11:F").setNumberFormat('#,##0" ៛"');
-  s.getRange("K11:O").setNumberFormat('#,##0" ៛"');
-
-  // Transactions validation with Refund
-  t.getRange("D2:D").setDataValidation(
-    SpreadsheetApp.newDataValidation()
-      .requireValueInList(["Lend", "Repay", "Refund"], true)
-      .build(),
-  );
-
-  // Conditional format rules on Transactions
-  t.setConditionalFormatRules([
-    SpreadsheetApp.newConditionalFormatRule()
-      .whenFormulaSatisfied('=$D2="Repay"')
-      .setBackground("#e6f4ec")
-      .setRanges([t.getRange("A2:G")])
-      .build(),
-    SpreadsheetApp.newConditionalFormatRule()
-      .whenFormulaSatisfied('=$D2="Lend"')
-      .setBackground("#fff4e0")
-      .setRanges([t.getRange("A2:G")])
-      .build(),
-    SpreadsheetApp.newConditionalFormatRule()
-      .whenFormulaSatisfied('=$D2="Refund"')
-      .setBackground("#e0f2fe")
-      .setRanges([t.getRange("A2:G")])
-      .build(),
-  ]);
 }

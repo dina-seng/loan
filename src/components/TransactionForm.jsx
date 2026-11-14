@@ -9,6 +9,7 @@ import {
   computeTotals,
   formatMoney,
 } from "../utils";
+import { BanknoteIcon, AlertCircleIcon } from "./Icons";
 
 const ADD_BORROWER_OPTION = "__add_new_borrower__";
 
@@ -448,7 +449,7 @@ export default function TransactionForm({
                   }`}
                 style={{ minHeight: "52px" }}
               >
-                <span className="block text-base sm:text-lg">💸</span>
+                <BanknoteIcon className="w-5 h-5 mx-auto mb-1" />
                 ឱ្យខ្ចី (Lend)
               </button>
               <button
@@ -467,7 +468,7 @@ export default function TransactionForm({
                   }`}
                 style={{ minHeight: "52px" }}
               >
-                <span className="block text-base sm:text-lg">💰</span>
+                <BanknoteIcon className="w-5 h-5 mx-auto mb-1" />
                 ទទួលសង (Repay)
               </button>
             </div>
@@ -477,7 +478,7 @@ export default function TransactionForm({
           {overpaymentWarning && (
             <div className="rounded-xl border-2 border-amber-400 bg-amber-50 p-4 text-amber-950 space-y-3 shadow-sm">
               <div className="flex items-start gap-2">
-                <span className="text-xl">⚠️</span>
+                <AlertCircleIcon className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                 <div className="text-sm font-medium leading-relaxed">
                   {overpaymentWarning}
                 </div>
