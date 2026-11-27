@@ -1,5 +1,49 @@
 # Changelog
 
+## 4.0.0 — spec v4 backend (in progress)
+
+The unified `Entry` ledger is kept. Removed features are restored as additive satellite tables
+through the forward-only `20261128000000_spec_v4_rich_ledger` migration; nothing is dropped.
+
+### Added
+
+- `Partner.openingBalance`, carried into every balance, preview and statement.
+- `Product` catalog, multi-line `DeliveryItem` with server-computed totals, `Settlement` detail,
+  `PeriodClosing` snapshots and an append-only `AuditLog`.
+- Partial and full settlements through `/payments` and `/settlements` (one detail table).
+- Custom-period `/reports/summary`, `/reports/statement`, `/reports/closing-preview`,
+  `/period-closings/preview`; closing/reopening are `OWNER`-only and audited.
+- Unified `/transactions`, plus `/lending`, `/deliveries`, `/products` and `/audit` routes.
+- Transaction-scoped partner locking so concurrent payments cannot reuse a stale balance.
+- `X-Robots-Tag: noindex, nofollow` on every response and `/robots.txt` on API and web.
+- `MIGRATION_RUNBOOK.md`, enhanced README, and a production guard on the seed script.
+
+### Frontend
+
+- Dashboard shows the four period totals from `/dashboard`, a date-range selector and a closed-period warning.
+- Multi-line delivery, partial/full settlement and product-catalog screens.
+- History uses `/transactions` with server-computed monthly subtotals; no money is added in the browser.
+- Period closing/reopening (owner only), statements and audit trail screens; three-item mobile nav.
+- Authenticated CSV download and a void dialog that records the reason.
+
+### Integration tests
+
+- Added a 13-scenario spec-v4 suite alongside the original 14-test ledger suite.
+- Covered multi-item delivery, previews/closing, per-partner isolation, closed-period 409 details,
+  carry-forward, partial settlement, idempotency, concurrency, reopening, audit and CSV export.
+- Applied the forward migration to the migrated `business_ledger_test` database only.
+
+### Fixed
+
+- `getFirstOpenDate()` had reversed parameters and broke every dashboard request.
+- Delivery quantities are serialized with three decimal places instead of losing trailing zeroes.
+- `/payments/:id` and `/settlements/:id` accept either the entry id or the returned settlement id.
+- The v4 migration tolerates the `Partner_name_lower_key` index left by an older migration.
+- Khmer numerals (`០-៩`) are parsed before money/quantity validation.
+- `includeVoided=false` query strings no longer become truthy.
+- Voiding records `voidedById` and `voidReason`; malformed UUID path ids return 404.
+- Closed-period 409 responses name the last closed date and earliest allowed date.
+
 ## 3.0.0 — simplified ledger
 
 The app now does one thing: track what a partner owes us or what we owe them. Everything

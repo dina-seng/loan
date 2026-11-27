@@ -16,7 +16,7 @@ authRouter.post('/login', asyncHandler(async (req, res) => {
   throttle.reset();
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
   await createSession(user.id, res);
-  ok(res, { user: { id: user.id, username: user.username, displayName: user.displayName } });
+  ok(res, { user: { id: user.id, username: user.username, displayName: user.displayName, role: user.role } });
 }));
 
 authRouter.post('/logout', authRequired, asyncHandler(async (req, res) => {
@@ -30,6 +30,7 @@ authRouter.get('/me', authRequired, asyncHandler(async (req, res) => {
       id: req.user.id,
       username: req.user.username,
       displayName: req.user.displayName,
+      role: req.user.role,
     },
   });
 }));

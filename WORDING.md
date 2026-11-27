@@ -12,8 +12,14 @@ Rule of thumb: the screens stay Khmer-only. No English labels, no mixed sentence
 | Term | Khmer | Meaning | Where | Colour |
 |---|---|---|---|---|
 | Lend | ឱ្យខ្ចី | cash we gave the partner (they owe more) | add buttons, history chips, filter | orange / amber |
-| Product | ទំនិញ | value of goods we received (they owe less) | add buttons, history chips, filter | green |
-| Settle | ទូទាត់រួច | the one button that clears the whole balance | dashboard button, confirm title | green |
+| Product | ទំនិញ | goods we received, recorded as one or more priced lines (they owe less) | add buttons, history chips, filter | green |
+| Settle | ទូទាត់ | a payment in either direction, full or partial | settlement button and list | green |
+| Settle all | ទូទាត់រួច | the action that clears the whole balance | dashboard button, confirm title | green |
+| Partial payment | ទូទាត់ផ្នែក | only part of the balance was paid; residual carries forward | settlement status | amber |
+| Opening balance | សមតុល្យដើម | balance carried in before any recorded entry | partner settings, statement header | — |
+| Close period | បិទកំឡុងពេល | freeze a date range against new entries | closing preview and confirm | — |
+| Reopen period | បើកកំឡុងពេលឡើងវិញ | unfreeze the latest closed range (owner only) | closing list | — |
+| Audit log | ប្រវត្តិកែប្រែ | append-only record of who changed what | audit screen | — |
 | Balance headline | ត្រូវទូទាត់ | label above the balance amount | dashboard card | follows the state |
 | They owe us | គេជំពាក់យើង | balance is positive | dashboard card, partner list | amber |
 | We owe them | យើងជំពាក់គេ | balance is negative | dashboard card, partner list | blue |
@@ -28,8 +34,8 @@ Feedback: **បានរក្សាទុករួចរាល់** (saved), **
 
 - **ឱ្យខ្ចី** is the everyday phrase for handing money over as a loan; it names the direction
   from our side, which matches the positive balance.
-- **ទំនិញ** is simply "goods". The app records only the value of what was received, so a
-  longer phrase about quantity or unit price would promise detail the screen does not ask for.
+- **ទំនិញ** is simply "goods". Each line now records quantity, unit price and a server-computed
+  line total; the total is never typed or recalculated in the browser.
 - **ទូទាត់រួច** reads as "settled". It is the single action, so it is the button label; the
   confirm dialog asks the question form, **តើអ្នកពិតជាចង់ទូទាត់សមតុល្យនេះមែនទេ?**.
 - **ត្រូវទូទាត់** is the headline because it describes the amount itself ("to be settled"),
@@ -44,3 +50,7 @@ Feedback: **បានរក្សាទុករួចរាល់** (saved), **
 - A row's amount keeps its `+` / `−` sign because the row shows one entry, not a balance.
 - Dates are plain `yyyy-mm-dd` and are formatted as «២៧ វិច្ឆិកា ២០២៦» without ever converting
   through `toISOString` or a timestamp, so the Cambodia date never shifts.
+- Quantities use up to three decimal places (e.g. «២.៥») and are written as exact integers
+  scaled by 1000 before the server rounds the line total to the nearest riel.
+- A closed-period warning must always name «ថ្ងៃបិទចុងក្រោយ» (last closed date) and
+  «ថ្ងៃដំបូងដែលអាចបញ្ចូលបាន» (earliest allowed date), so the next step is unambiguous.

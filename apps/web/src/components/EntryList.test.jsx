@@ -5,8 +5,15 @@ import { ConfirmDialog } from './Ui.jsx';
 import { labels } from '../strings.km.js';
 
 const entry = (id, type, date, amount, extra = {}) => ({
-  id, type, date, amount, note: null, voidedAt: null, partnerId: 'p1', ...extra,
+  id, type, date, amount, note: null, voidedAt: null, partnerId: 'p1',
+  effect: type === 'LEND' || type === 'SETTLE_OUT' ? 'INCREASE' : 'DECREASE',
+  ...extra,
 });
+
+const monthlyTotals = [
+  { month: '2026-11', totalLent: '5000000', totalProductValue: '2000000', transactionCount: 2 },
+  { month: '2026-10', totalLent: '1000000', totalProductValue: '0', transactionCount: 2 },
+];
 
 const entries = [
   entry('a', 'LEND', '2026-11-27', '5000000'),
@@ -17,7 +24,7 @@ const entries = [
 
 describe('EntryList', () => {
   it('groups entries by month, newest first, with a lend/product subtotal', () => {
-    render(<EntryList entries={entries} />);
+    render(<EntryList entries={entries} monthlyTotals={monthlyTotals} />);
     const headings = screen.getAllByRole('heading').map((node) => node.textContent);
     expect(headings).toEqual(['វិច្ឆិកា ២០២៦', 'តុលា ២០២៦']);
     expect(screen.getByText('ឱ្យខ្ចី ៛5,000,000 · ទំនិញ ៛2,000,000')).toBeInTheDocument();
@@ -25,7 +32,7 @@ describe('EntryList', () => {
   });
 
   it('labels every type in Khmer and never prints a negative amount', () => {
-    render(<EntryList entries={entries} />);
+    render(<EntryList entries={entries} monthlyTotals={monthlyTotals} />);
     expect(screen.getAllByText(labels.lend).length).toBeGreaterThan(0);
     expect(screen.getAllByText(labels.product).length).toBeGreaterThan(0);
     expect(screen.getByText(labels.settleIn)).toBeInTheDocument();

@@ -6,6 +6,13 @@ import LoginPage from './pages/LoginPage.jsx';
 import { PartnerProvider } from './partners.jsx';
 import DashboardPage from './pages/DashboardPage.jsx';
 import HistoryPage from './pages/HistoryPage.jsx';
+import ToolsPage from './pages/ToolsPage.jsx';
+import ProductsPage from './pages/ProductsPage.jsx';
+import DeliveriesPage from './pages/DeliveriesPage.jsx';
+import SettlementsPage from './pages/SettlementsPage.jsx';
+import ClosingsPage from './pages/ClosingsPage.jsx';
+import StatementsPage from './pages/StatementsPage.jsx';
+import AuditPage from './pages/AuditPage.jsx';
 import { labels } from './strings.km.js';
 
 function ProtectedLayout() {
@@ -26,6 +33,13 @@ export default function App() {
           <Route element={<ProtectedLayout />}>
             <Route index element={<DashboardPage />} />
             <Route path="history" element={<HistoryPage />} />
+            <Route path="tools" element={<ToolsPage />} />
+            <Route path="products" element={<ProductsPage />} />
+            <Route path="deliveries" element={<DeliveriesPage />} />
+            <Route path="settlements" element={<SettlementsPage />} />
+            <Route path="closings" element={<ClosingsPage />} />
+            <Route path="statements" element={<StatementsPage />} />
+            <Route path="audit" element={<AuditPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

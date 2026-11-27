@@ -3,11 +3,13 @@
 A mobile-first, Khmer-first ledger for Dad (ប៉ា) and **multiple business partners** (ដៃគូ). The first partner is Oudom (អ៊ូដុំ); more can be added and renamed at any time.
 
 - Dad lends money **to** a partner → that partner owes Dad more.
-- A partner delivers products **to** Dad → Dad owes that partner more.
-- Payments can be made in either direction, partially or in full.
-- A delivery is a single money amount (the value of the goods received).
+- A partner delivers **multiple priced product lines** to Dad → Dad owes that partner more.
+- Payments move in either direction and may be **partial**; the residual balance carries forward.
+- A partner can start with an **opening balance** carried into every statement.
+- Any custom date range can be **closed and reopened**; closed periods reject new entries until reopened.
+- Every financial change writes an append-only **audit log**.
 
-All money is stored as integer KHR (៛) in PostgreSQL `BIGINT` columns. Balances are **derived** from validated ledger records, never from an editable balance column.
+All money is stored as integer KHR (៛) in PostgreSQL `BIGINT` columns. Balances are **derived** by one backend service from the opening balance plus validated ledger records — never from an editable balance column, and never calculated in the browser.
 
 > The old Google Apps Script / Google Sheets implementation was removed after the migration; its history and the migration mapping are documented in [MIGRATION_PLAN.md](./MIGRATION_PLAN.md). The active application lives in `apps/api` and `apps/web`.
 
@@ -61,16 +63,18 @@ createdb business_ledger_test
 ```bash
 npm run prisma:migrate          # development migration (creates apps/api/prisma/migrations)
 npm run prisma:generate         # generate Prisma client
-npm run prisma:seed             # creates the "dad" owner account and the fallback partner អ៊ូដុំ
+npm run prisma:seed             # creates the "dad" OWNER account and the fallback partner អ៊ូដុំ
 ```
 
-Default seeded login: **dad** / **change-me-123** — change this before real use.
+The newest migration, `20261128000000_spec_v4_rich_ledger`, is **forward-only**: it adds columns and tables, backfills one delivery line per existing `PRODUCT` entry and one payment detail per existing `SETTLE_*` entry, and never drops or rewrites a row. See the migration runbook in [MIGRATION_RUNBOOK.md](./MIGRATION_RUNBOOK.md) before applying it to a live database. Always take a `pg_dump` backup first.
+
+Default seeded login: **dad** / **change-me-123** — change this before real use. The seed promotes an existing `dad` account to `OWNER` without changing its password. It refuses to run in production unless `ALLOW_PROD_SEED=1` is set deliberately.
 Change it by setting `SEED_USERNAME` / `SEED_PASSWORD` before seeding, or by updating the password hash with a small script. No fake financial transactions are ever seeded.
 
 Prepare the test database (once):
 
 ```bash
-DATABASE_URL="$TEST_DATABASE_URL" npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
+npm run prisma:migrate:test   # safe: loads .env in Node, refuses non-test names, prints target
 ```
 
 ## 3. Development
@@ -93,7 +97,7 @@ npm run lint          # ESLint
 npm run build         # Prisma generate + production web build
 ```
 
-Financial tests cover: the four entry effects, the worked example (5,000,000 lend − 4,504,500 product = 495,500), settling to zero, settling the other direction, void exclusion, duplicate entry ids, same-day entry after settle, validation and partner name normalization.
+Unit tests cover the four entry effects, the worked example (5,000,000 lend − 4,504,500 product = 495,500), exact Khmer-digit money/quantity parsing, period totals, opening-balance carry-forward, date-range safety and JSON-safe closing snapshots. API integration tests (run separately against the test database) cover lending, multi-item delivery, partial/full payments, previews, closing/reopening, closed-period isolation, carry-forward, idempotency, concurrency, audit and validation. `npm test` runs both suites and requires a migrated `business_ledger_test` database; use `npm run prisma:migrate:test` to migrate it safely.
 
 Optional browser QA (requires dev servers running and Microsoft Edge at the default Windows path, or edit `executablePath` in the scripts):
 
@@ -120,7 +124,7 @@ NODE_ENV=production npm start
 
 ### Option A — single service (recommended for simplicity)
 
-Deploy the repo to a Node host (Render, Railway, Fly.io, VPS). Build the web app, run `prisma migrate deploy`, start the API. Set `CLIENT_URL` to your public origin. Health check path: `/health`.
+Deploy the repo to a Node host (Render, Railway, Fly.io, VPS, or `dinacreator.space`). Build the web app, run `prisma migrate deploy`, start the API. Set `CLIENT_URL` to your public origin. Health check path: `/health`. See [MIGRATION_RUNBOOK.md](./MIGRATION_RUNBOOK.md) for the exact `dinacreator.space` release order. The API sends `X-Robots-Tag: noindex, nofollow` on every response and serves `/robots.txt`; the built frontend also includes the same meta tag and static `robots.txt`.
 
 ### Option B — separate frontend and backend
 
@@ -153,6 +157,8 @@ the selected partner's full history (voided rows included) from the History scre
 | `Timed out trying to acquire a postgres advisory lock` | Another `prisma migrate` is still running against the same database. Wait a few seconds and retry. |
 | Integration tests refuse to run | `TEST_DATABASE_URL` must point at a separate database and must contain `test` in its name. Create it with `createdb business_ledger_test` and migrate it once (see Database setup). |
 | Login returns 401 repeatedly | The seeded account may not exist yet: run `npm run prisma:seed`. Change `SEED_PASSWORD` before first real use. |
+| Closing/reopening returns 403 | Those actions are `OWNER`-only. The seed promotes the existing `dad` account to `OWNER`; other users stay `MEMBER`. |
+| `PERIOD_CLOSED` / `PERIOD_OVERLAP` on a new entry | The date falls in a closed period. The error names `lastClosedDate` and `earliestAllowedDate`; use the first open date or reopen the latest closing. |
 | A date shows one day earlier/later | Dates are plain `yyyy-mm-dd` and must never be converted with `toISOString` or a timestamp. Send the string straight from the date input. |
 | `មិនមានសមតុល្យត្រូវទូទាត់ទេ` when settling | The balance is exactly zero, so there is nothing to clear. Add an entry first. |
 
@@ -161,23 +167,40 @@ the selected partner's full history (voided rows included) from the History scre
 ```
 apps/api/src/
   config.js, db.js, errors.js        configuration, Prisma, central error handling
-  money.js, dates.js                 exact integer money + Cambodia date parsing
+  money.js, dates.js                 exact integer money/quantity + Cambodia date parsing
   ledger.js                          THE balance calculation service (single source of truth)
-  auth.js                            cookie sessions and scrypt passwords
+  audit.js, serialize.js             append-only audit trail + JSON serializers
+  auth.js, partner.js                sessions, roles, selected-partner scoping
   schemas.js                         request validation
   routes/                            /api/v1 endpoint groups
-apps/api/prisma/schema.prisma        users, sessions, partners and the single Entry table
+apps/api/prisma/schema.prisma        users, partners, Entry + satellite tables
 apps/web/src/
   partners.jsx                       selected-partner context (persisted in localStorage)
-  pages/                             Dashboard, History
-  components/                        Layout, PartnerSwitcher, EntryModal, EntryList, Ui
-  i18n/labels.js                     Khmer-first labels and error messages
+  pages/                             Dashboard, History, Tools, Products, Deliveries,
+                                     Settlements, Closings, Statements, Audit
+  components/                        Layout, PartnerSwitcher, EntryModal, DeliveryModal,
+                                     SettlementModal, VoidDialog, EntryList, Ui
+  strings.km.js                      every user-facing Khmer string (see WORDING.md)
   utils/money.js                     display formatting only — no financial logic
 ```
 
-### One Entry table
+The mobile bottom bar keeps three destinations (Dashboard, History, Tools); Tools links to the
+product catalog, deliveries, settlements, period closings, statements and the audit trail. All
+totals — including per-month subtotals — come from the API in `meta`; the browser only formats
+them for display. Entry forms default to the first open date after the latest closing and show a
+Khmer warning naming the last closed date and earliest allowed date when a closed date is used.
 
-Every record is one row in `Entry` (`id`, `partnerId`, `type`, `entryDate`, `amount`, `note`, `voidedAt`). The type decides the sign; the amount is always a positive whole riel.
+### One Entry ledger plus satellite tables
+
+Every money movement is one row in `Entry` (`id`, `partnerId`, `type`, `entryDate`, `amount`, `note`, `voidedAt`, `voidReason`). The type decides the sign; the amount is always a positive whole riel. Detailed information lives in satellite tables that point back to the entry:
+
+| Table | Purpose |
+|---|---|
+| `Product` | Reusable catalog with an optional default unit price; historical lines keep their own name/price snapshot. |
+| `DeliveryItem` | One priced line of a `PRODUCT` entry (`quantity`, `unitPrice`, `lineTotal`). Server computes the total; the client never does. |
+| `Settlement` | One payment detail for a `SETTLE_IN` / `SETTLE_OUT` entry (`direction`, `method`, `status`, `balanceAfter`). Shared by `/payments` and `/settlements`. |
+| `PeriodClosing` | Immutable snapshot of a closed range, with totals and the balance carried forward. |
+| `AuditLog` | Append-only record of who changed what, before and after. |
 
 | Type | Meaning | Effect on the balance |
 |---|---|---|
@@ -187,16 +210,18 @@ Every record is one row in `Entry` (`id`, `partnerId`, `type`, `entryDate`, `amo
 | `SETTLE_OUT` | we paid the partner | `+` |
 
 ```
-Partner Balance = LEND − PRODUCT − SETTLE_IN + SETTLE_OUT
+Partner Balance = openingBalance + LEND − PRODUCT − SETTLE_IN + SETTLE_OUT
 ```
 
-`computeBalance()` in `apps/api/src/ledger.js` is the only balance calculation; the dashboard, partner list, history and settle all use it.
+`computeBalance()` in `apps/api/src/ledger.js` is the only balance calculation; the dashboard, partner list, transactions, statements, previews and settlement all use it.
 
 - Positive → `PARTNER_OWES_US` (គេជំពាក់យើង, amber)
 - Negative → `WE_OWE_PARTNER` (យើងជំពាក់គេ, blue)
 - Zero → `SETTLED` (ស្មើរួចរាល់, green)
 
-The settle action adds ONE entry for the whole balance (`SETTLE_IN` when they owe us, `SETTLE_OUT` when we owe them). There are no partial payments, and nothing is locked afterwards — a new entry on the same day is accepted. Deleting sets `voidedAt` (soft delete) and excludes the row from every balance. The browser generates each entry id, so retrying a save with the same id returns the existing row instead of writing a second one.
+A full settlement clears the exact balance with one entry (`SETTLE_IN` when they owe us, `SETTLE_OUT` when we owe them); a partial settlement records only the amount paid and the residual balance, so the balance carries forward. Writes for one partner are serialized with a transaction-scoped advisory lock, so two simultaneous payments cannot both use the same starting balance. Deleting sets `voidedAt` and `voidReason` (soft delete) and excludes the row from every balance. The browser generates each id, so retrying a save with the same id returns the existing row instead of writing a second one.
+
+Closing a custom period stores the computed totals, the closing balance and a JSON snapshot. While a period is closed, entries dated inside it are rejected with `PERIOD_CLOSED`, which names the last closed date and the earliest allowed date; the default new-entry date becomes the first open day. Only the latest closing can be reopened, and that action is `OWNER`-only and audited.
 
 ## API endpoints
 
@@ -205,14 +230,23 @@ All under `/api/v1`, JSON responses shaped `{ ok, data, meta? }` or `{ ok: false
 | Group | Endpoints |
 |---|---|
 | `/auth` | `POST /login`, `POST /logout`, `GET /me` |
-| `/partners` | `GET /` (with balances), `POST /`, `PATCH /:id`, `POST /:id/settle` |
-| `/dashboard` | `GET /` |
-| `/entries` | `GET /`, `GET /:id`, `POST /`, `POST /:id/void` |
-| `/reports` | `GET /transactions.csv` (backup export) |
-| Health | `GET /health` (unauthenticated, checks DB) |
+| `/partners` | `GET /` (balances + totals), `GET /:id`, `POST /`, `PATCH /:id`, `GET /:id/opening-balance`, `POST /:id/settle` (full balance) |
+| `/products` | `GET /`, `GET /:id`, `POST /`, `PATCH /:id`, `POST /:id/deactivate` (shared catalog; login required) |
+| `/dashboard` | `GET /?from=&to=` (balance + four totals + recent entries) |
+| `/entries` | `GET /`, `GET /:id`, `POST /`, `POST /:id/void`, `GET /list/all` |
+| `/lending` | `GET /`, `GET /:id`, `POST /`, `POST /:id/void` |
+| `/deliveries` | `GET /`, `GET /:id`, `POST /`, `POST /:id/void` (multi-item, server-computed totals) |
+| `/payments` | `GET /`, `GET /:id`, `POST /`, `POST /:id/void` (payment view of settlements) |
+| `/settlements` | `GET /`, `GET /current`, `GET /:id`, `POST /` (partial or `fullBalance`) |
+| `/period-closings` | `GET /`, `GET /preview?startDate=&endDate=`, `GET /:id`, `POST /`, `POST /:id/reopen` (owner-only writes) |
+| `/transactions` | `GET /`, `GET /:id` (unified, filter by `kind`, `type`, date, search) |
+| `/reports` | `GET /summary`, `GET /statement`, `GET /closing-preview`, `GET /transactions.csv` |
+| `/audit` | `GET /` (append-only trail for the selected partner) |
+| Health | `GET /health` (unauthenticated, checks DB), `GET /robots.txt` |
 
 ## Known limitations
 
-- One login is seeded; additional users share full write permissions (there is no account-management UI yet).
+- There is no account-management UI yet. The seeded owner is `OWNER`; additional users created directly in the database default to `MEMBER` and cannot close/reopen periods or read the audit trail.
+- `SESSION_SECRET` is required in production but currently reserved: sessions are random DB-backed tokens, not signed cookies.
 - Login throttling is process-local; use a shared rate limiter (e.g. Redis) when running multiple API instances.
-- The legacy Apps Script implementation has been removed; see `MIGRATION_PLAN.md` for its migration mapping and git history for the old files.
+- The legacy Apps Script / Sheets implementation is retained in git history; its migration mapping is in `MIGRATION_PLAN.md`. CSV export remains the supported backup/export path.

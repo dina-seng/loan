@@ -20,6 +20,35 @@ export function toISODate(date) {
   return d.toISOString().slice(0, 10);
 }
 
+/** Format a timestamp (not a plain date) in the business timezone. */
+export function toBusinessISODate(date) {
+  if (!date) return null;
+  const d = date instanceof Date ? date : new Date(date);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: config.businessTimeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(d);
+  const get = (type) => parts.find((p) => p.type === type)?.value;
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
+export function addDays(date, days) {
+  const d = date instanceof Date ? new Date(date.getTime()) : parseDate(date);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d;
+}
+
+export function assertRange(start, end) {
+  const startDate = start instanceof Date ? start : parseDate(start, 'startDate');
+  const endDate = end instanceof Date ? end : parseDate(end, 'endDate');
+  if (startDate > endDate) {
+    throw badRequest('VALIDATION_ERROR', { endDate: 'ថ្ងៃបញ្ចប់ត្រូវនៅក្រោយថ្ងៃចាប់ផ្តើម' });
+  }
+  return { startDate, endDate };
+}
+
 /** Today in the business timezone (Cambodia by default), never UTC. */
 export function todayISO() {
   const parts = new Intl.DateTimeFormat('en-CA', {

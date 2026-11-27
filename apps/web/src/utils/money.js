@@ -8,6 +8,15 @@ export function normalizeAmountInput(value) {
     .replace(/[^\d]/g, '');
 }
 
+/** Khmer-aware quantity input: digits plus at most one decimal separator. */
+export function normalizeQuantityInput(value) {
+  const digits = normalizeAmountInput(value);
+  const firstDot = String(value ?? '').indexOf('.');
+  if (firstDot < 0) return digits;
+  const [whole, fraction = ''] = String(value).split('.');
+  return `${normalizeAmountInput(whole)}.${normalizeAmountInput(fraction).slice(0, 3)}`;
+}
+
 /** Exact grouped digits; never goes through Number, so huge BigInt amounts stay correct. */
 export function formatNumber(value) {
   let digits = String(value ?? '').trim();

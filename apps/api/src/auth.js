@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { promisify } from 'node:util';
 import { config } from './config.js';
 import { prisma } from './db.js';
-import { AppError, asyncHandler, badRequest, unauthorized } from './errors.js';
+import { AppError, asyncHandler, badRequest, forbidden, unauthorized } from './errors.js';
 
 const scrypt = promisify(crypto.scrypt);
 
@@ -76,6 +76,12 @@ export const authRequired = asyncHandler(async (req, _res, next) => {
   req.sessionId = session.id;
   next();
 });
+
+/** Period closing/reopening and audit access are owner-only. Use after authRequired. */
+export function ownerRequired(req, _res, next) {
+  if (req.user?.role !== 'OWNER') return next(forbidden());
+  next();
+}
 
 /** Simple in-memory per-IP + username throttling for login attempts. */
 const attempts = new Map();

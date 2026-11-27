@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { errorMessage, labels } from './strings.km.js';
+import { closedPeriodMessage, errorMessage, labels } from './strings.km.js';
 
 describe('Khmer wording', () => {
   it('prefers the specific backend field message', () => {
@@ -15,6 +15,18 @@ describe('Khmer wording', () => {
     expect(errorMessage({ code: 'NOTHING_TO_SETTLE' })).toBe('មិនមានសមតុល្យត្រូវទូទាត់ទេ');
     expect(errorMessage({ code: 'UNAUTHORIZED' })).toBe('សូមចូលប្រើគណនីឡើងវិញ');
     expect(errorMessage({ code: 'NETWORK' })).toBe('រក្សាទុកមិនបាន សូមព្យាយាមម្តងទៀត');
+    expect(errorMessage({ code: 'FORBIDDEN' })).toBe(labels.ownerOnly);
+    expect(errorMessage({ code: 'PRODUCT_NOT_FOUND' })).toBe('រកមិនឃើញទំនិញនេះទេ');
+  });
+
+  it('prefers the composed closed-period message over machine ids', () => {
+    const error = {
+      code: 'PERIOD_CLOSED',
+      message: 'ថ្ងៃបិទចុងក្រោយ 2026-11-30',
+      details: { closingId: '00000000-0000-4000-8000-000000000001', lastClosedDate: '2026-11-30', earliestAllowedDate: '2026-12-01' },
+    };
+    expect(errorMessage(error)).toBe('ថ្ងៃបិទចុងក្រោយ 2026-11-30');
+    expect(closedPeriodMessage(error.details)).toContain('2026-12-01');
   });
 
   it('falls back to the error text, then the generic message', () => {

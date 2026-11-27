@@ -10,8 +10,13 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum UserRole {
+  OWNER
+  MEMBER
+}
+
 /**
- * The only kind of ledger record. The sign is derived from the type, never stored:
+ * The core ledger record. The sign is derived from the type, never stored:
  *   LEND        money we gave the partner          → they owe more (+)
  *   PRODUCT     value of goods we received         → they owe less (−)
  *   SETTLE_IN   the partner paid us                → they owe less (−)
@@ -24,27 +29,50 @@ enum EntryType {
   SETTLE_OUT
 }
 
+// Direction is relative to Dad: the first value means the partner pays Dad.
+enum PaymentDirection {
+  PARTNER_TO_DAD
+  DAD_TO_PARTNER
+}
+
+enum SettlementStatus {
+  PARTIAL
+  FULL
+}
+
+enum ClosingStatus {
+  ACTIVE
+  REOPENED
+}
+
 model User {
   id           String    @id @default(uuid()) @db.Uuid
   username     String    @unique
   passwordHash String
   displayName  String
+  role         UserRole  @default(MEMBER)
   isActive     Boolean   @default(true)
   lastLoginAt  DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  sessions Session[]
-  entries  Entry[] @relation("EntryCreatedBy")
+  sessions       Session[]
+  entries        Entry[]        @relation("EntryCreatedBy")
+  voidedEntries  Entry[]        @relation("EntryVoidedBy")
+  periodClosings PeriodClosing[] @relation("ClosingClosedBy")
+  auditLogs      AuditLog[]
 }
 
 model Partner {
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String   @id @default(uuid()) @db.Uuid
+  name           String
+  openingBalance BigInt   @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  entries Entry[]
+  entries        Entry[]
+  settlements    Settlement[]
+  periodClosings PeriodClosing[]
 
   @@index([name])
 }
@@ -56,17 +84,138 @@ model Entry {
   entryDate   DateTime  @db.Date
   amount      BigInt
   note        String?
+  reference   String?
   voidedAt    DateTime?
+  voidedById  String?   @db.Uuid
+  voidReason  String?
   createdById String    @db.Uuid
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  partner   Partner @relation(fields: [partnerId], references: [id])
-  createdBy User    @relation("EntryCreatedBy", fields: [createdById], references: [id])
+  partner       Partner        @relation(fields: [partnerId], references: [id])
+  createdBy     User           @relation("EntryCreatedBy", fields: [createdById], references: [id])
+  voidedBy      User?          @relation("EntryVoidedBy", fields: [voidedById], references: [id])
+  deliveryItems DeliveryItem[]
+  settlement    Settlement?
 
   @@index([partnerId, entryDate])
+  @@index([partnerId, type, entryDate])
   @@index([voidedAt])
+  @@index([voidedById])
   @@index([type])
+}
+
+/** Reusable product catalog. Historical deliveries keep their own name/price snapshot. */
+model Product {
+  id              String   @id @default(uuid()) @db.Uuid
+  name            String
+  unit            String?
+  defaultUnitPrice BigInt?
+  note            String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  deliveryItems DeliveryItem[]
+
+  @@unique([name])
+  @@index([isActive])
+}
+
+/** One line of a PRODUCT entry. Quantity is exact to three decimal places. */
+model DeliveryItem {
+  id          String   @id @default(uuid()) @db.Uuid
+  entryId     String   @db.Uuid
+  productId   String?  @db.Uuid
+  productName String
+  unit        String?
+  quantity    Decimal  @db.Decimal(18, 3)
+  unitPrice   BigInt
+  lineTotal   BigInt
+  sortOrder   Int      @default(0)
+  note        String?
+  createdAt   DateTime @default(now())
+
+  entry   Entry    @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([entryId])
+  @@index([productId])
+}
+
+/** Payment detail for a SETTLE_IN / SETTLE_OUT entry. Partial payments are allowed. */
+model Settlement {
+  id              String           @id @default(uuid()) @db.Uuid
+  entryId         String           @unique @db.Uuid
+  partnerId       String           @db.Uuid
+  periodClosingId String?          @db.Uuid
+  direction       PaymentDirection
+  amount          BigInt
+  method          String           @default("cash")
+  status          SettlementStatus @default(PARTIAL)
+  balanceAfter    BigInt
+  note            String?
+  reference       String?
+  createdAt       DateTime         @default(now())
+
+  entry         Entry          @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  partner       Partner        @relation(fields: [partnerId], references: [id])
+  periodClosing PeriodClosing? @relation(fields: [periodClosingId], references: [id], onDelete: SetNull)
+
+  @@index([partnerId, createdAt])
+  @@index([periodClosingId])
+  @@index([direction])
+}
+
+/** Immutable snapshot of one closed period. Only the latest closing may be reopened. */
+model PeriodClosing {
+  id               String        @id @default(uuid()) @db.Uuid
+  partnerId        String        @db.Uuid
+  closingKey       String?
+  periodStart      DateTime      @db.Date
+  periodEnd        DateTime      @db.Date
+  closedAt         DateTime      @default(now())
+  closedById       String        @db.Uuid
+  status           ClosingStatus @default(ACTIVE)
+  openingBalance   BigInt
+  totalLent        BigInt
+  totalDelivered   BigInt
+  totalReceived    BigInt
+  totalPaidOut     BigInt
+  settlementAmount BigInt        @default(0)
+  closingBalance   BigInt
+  note             String?
+  snapshot         Json
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  partner     Partner      @relation(fields: [partnerId], references: [id])
+  closedBy    User         @relation("ClosingClosedBy", fields: [closedById], references: [id])
+  settlements Settlement[]
+
+  @@unique([partnerId, closingKey])
+  @@index([partnerId, periodStart, periodEnd])
+  @@index([status])
+}
+
+/** Append-only record of every important financial change. */
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String?  @db.Uuid
+  partnerId  String?  @db.Uuid
+  action     String
+  entityType String
+  entityId   String?
+  before     Json?
+  after      Json?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([partnerId, createdAt])
+  @@index([entityType, entityId])
+  @@index([action])
 }
 
 model Session {

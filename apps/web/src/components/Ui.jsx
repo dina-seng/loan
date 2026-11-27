@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { RIER, labels } from '../strings.km.js';
-import { balanceTone, formatMoney, formatPositive } from '../utils/money.js';
+import { balanceTone, formatMoney, formatPositive, normalizeAmountInput } from '../utils/money.js';
 import { AlertCircleIcon, XIcon } from './Icons.jsx';
 
 export function PageHeader({ title, subtitle, action }) {
@@ -79,7 +79,7 @@ export function AmountField({ label, value, onChange, placeholder = '0', hint })
         <input
           className="input amount pl-8 text-right" inputMode="numeric" autoComplete="off"
           value={value} placeholder={placeholder}
-          onChange={(event) => onChange(event.target.value.replace(/[^\d]/g, ''))}
+          onChange={(event) => onChange(normalizeAmountInput(event.target.value))}
         />
       </div>
     </Field>

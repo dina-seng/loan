@@ -13,9 +13,17 @@ import { authRouter } from './routes/auth.js';
 import { authRequired } from './auth.js';
 import { partnerRequired } from './partner.js';
 import { partnersRouter } from './routes/partners.js';
+import { productsRouter } from './routes/products.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { entriesRouter } from './routes/entries.js';
+import { lendingRouter } from './routes/lending.js';
+import { deliveriesRouter } from './routes/deliveries.js';
+import { paymentsRouter } from './routes/payments.js';
+import { settlementsRouter } from './routes/settlements.js';
+import { periodClosingsRouter } from './routes/period-closings.js';
+import { transactionsRouter } from './routes/transactions.js';
 import { reportsRouter } from './routes/reports.js';
+import { auditRouter } from './routes/audit.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const webDist = path.resolve(here, '../../web/dist');
@@ -27,6 +35,15 @@ export function createApp() {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', 1);
+
+  // Private business data must never appear in search engines.
+  app.use((_req, res, next) => {
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+    next();
+  });
+  app.get('/robots.txt', (_req, res) => {
+    res.type('text/plain').send('User-agent: *\nDisallow: /\n');
+  });
 
   app.use(helmet({
     contentSecurityPolicy: config.isProduction ? {
@@ -69,13 +86,26 @@ export function createApp() {
   api.use('/auth', authRouter);
   api.use('/partners', partnersRouter);
 
+  // The product catalog is shared by every partner; only login is required.
+  api.use('/products', authRequired, productsRouter);
+
   // Every financial route is scoped to the selected partner before reaching its router.
-  const partnerScoped = ['/dashboard', '/entries', '/reports'];
+  const partnerScoped = [
+    '/dashboard', '/entries', '/lending', '/deliveries', '/payments',
+    '/settlements', '/period-closings', '/transactions', '/reports', '/audit',
+  ];
   api.use(partnerScoped, authRequired, partnerRequired);
 
   api.use('/dashboard', dashboardRouter);
   api.use('/entries', entriesRouter);
+  api.use('/lending', lendingRouter);
+  api.use('/deliveries', deliveriesRouter);
+  api.use('/payments', paymentsRouter);
+  api.use('/settlements', settlementsRouter);
+  api.use('/period-closings', periodClosingsRouter);
+  api.use('/transactions', transactionsRouter);
   api.use('/reports', reportsRouter);
+  api.use('/audit', auditRouter);
   app.use('/api/v1', api);
 
   app.use('/api', (_req, res) => res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'រកមិនឃើញសេវាកម្មនេះទេ' } }));

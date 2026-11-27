@@ -10,6 +10,16 @@ export function normalizePartnerName(value) {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+export function isUuid(value) {
+  return typeof value === 'string' && UUID.test(value);
+}
+
+/** Reject malformed path ids with a 404 instead of letting Prisma throw a 500. */
+export function assertUuidParam(value) {
+  if (!isUuid(value)) throw notFound();
+  return value;
+}
+
 /** The selected partner is sent on every request via the X-Partner-Id header. */
 export function resolvePartnerId(req) {
   const raw = req.get('X-Partner-Id') || (typeof req.query?.partnerId === 'string' ? req.query.partnerId : '');
@@ -28,3 +38,9 @@ export const partnerRequired = asyncHandler(async (req, _res, next) => {
   req.partner = partner;
   next();
 });
+
+/** Ensure a loaded row belongs to the selected partner. */
+export function assertPartnerAccess(row, req) {
+  if (!row || row.partnerId !== req.partnerId) throw notFound();
+  return row;
+}
