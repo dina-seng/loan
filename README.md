@@ -46,6 +46,7 @@ Edit `.env`:
 | `NODE_ENV`, `PORT` | Runtime mode and port. |
 | `BUSINESS_TIME_ZONE` | `Asia/Phnom_Penh` by default; used for “today”. |
 | `COOKIE_SECURE`, `COOKIE_SAME_SITE` | Cookie policy (see deployment below). |
+| `SEED_USERNAME`, `SEED_PASSWORD` | Development login created by `npm run prisma:seed`. |
 | `VITE_API_URL` | Only needed when the frontend is hosted separately from the API. |
 
 Create the databases:
@@ -141,7 +142,19 @@ pg_dump "$DATABASE_URL" -Fc -f ledger-backup.dump
 pg_restore --clean --if-exists -d "$DATABASE_URL" ledger-backup.dump
 ```
 
-Back up before every migration. Keep backups off the application host.
+Back up before every migration. Keep backups off the application host. The app also exports
+the selected partner's full history (voided rows included) from the History screen as CSV.
+
+## 8. Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| `EPERM … query_engine-windows.dll.node` on `prisma generate` | A running API/dev server holds the query engine. Stop it (`npm run dev` process tree), run `npm run prisma:generate`, then restart. |
+| `Timed out trying to acquire a postgres advisory lock` | Another `prisma migrate` is still running against the same database. Wait a few seconds and retry. |
+| Integration tests refuse to run | `TEST_DATABASE_URL` must point at a separate database and must contain `test` in its name. Create it with `createdb business_ledger_test` and migrate it once (see Database setup). |
+| Login returns 401 repeatedly | The seeded account may not exist yet: run `npm run prisma:seed`. Change `SEED_PASSWORD` before first real use. |
+| A date shows one day earlier/later | Dates are plain `yyyy-mm-dd` and must never be converted with `toISOString` or a timestamp. Send the string straight from the date input. |
+| `មិនមានសមតុល្យត្រូវទូទាត់ទេ` when settling | The balance is exactly zero, so there is nothing to clear. Add an entry first. |
 
 ## Architecture
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api.js';
-import { labels, errorMessage } from '../i18n/labels.js';
+import { labels, errorMessage } from '../strings.km.js';
 import { useToast } from '../components/Toast.jsx';
 import { usePartner } from '../partners.jsx';
 import { ConfirmDialog, InlineError, PageHeader } from '../components/Ui.jsx';

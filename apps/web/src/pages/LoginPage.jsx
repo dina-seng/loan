@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth.jsx';
-import { labels } from '../i18n/labels.js';
-import { errorMessage } from '../i18n/labels.js';
+import { labels } from '../strings.km.js';
+import { errorMessage } from '../strings.km.js';
 import { Field, InlineError } from '../components/Ui.jsx';
 
 export default function LoginPage() {
@@ -33,9 +33,8 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-brand-800 to-brand-950 px-4 py-10">
       <form onSubmit={submit} className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
         <div className="mb-6 text-center">
-          <p className="text-xs font-bold uppercase tracking-wide text-brand-600">Business Ledger</p>
-          <h1 className="mt-1 text-2xl font-extrabold text-slate-900">បញ្ជីហិរញ្ញវត្ថុ</h1>
-          <p className="mt-1 text-sm text-slate-500">រវាងប៉ា និងអ៊ូដុំ</p>
+          <h1 className="text-2xl font-extrabold text-slate-900">{labels.loginTitle}</h1>
+          <p className="mt-1 text-sm text-slate-500">{labels.loginSubtitle}</p>
         </div>
         <div className="space-y-4">
           <Field label={labels.username}>
@@ -47,7 +46,7 @@ export default function LoginPage() {
           <InlineError message={error} />
           <button type="submit" className="btn-primary w-full" disabled={busy}>{busy ? labels.loading : labels.login}</button>
         </div>
-        <p className="mt-5 text-center text-xs text-slate-400">សូមប្រើគណនីដែលបានកំណត់ឱ្យប៉ា</p>
+        <p className="mt-5 text-center text-xs text-slate-400">{labels.loginHint}</p>
       </form>
     </div>
   );

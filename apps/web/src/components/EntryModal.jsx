@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, newEntryId } from '../api.js';
-import { labels, errorMessage } from '../i18n/labels.js';
+import { labels, errorMessage } from '../strings.km.js';
 import { usePartner } from '../partners.jsx';
 import { normalizeAmountInput, todayISO } from '../utils/money.js';
 import { AmountField, Field, InlineError, Modal } from './Ui.jsx';
@@ -37,8 +37,8 @@ export default function EntryModal({ open, onClose, defaultType = 'LEND', onSave
     event.preventDefault();
     setError('');
     const money = normalizeAmountInput(amount);
-    if (!date) return setError('សូមជ្រើសរើសកាលបរិច្ឆេទ');
-    if (!money) return setError('សូមបញ្ចូលចំនួនទឹកប្រាក់');
+    if (!date) return setError(labels.dateRequired);
+    if (!money) return setError(labels.amountRequired);
 
     setBusy(true);
     try {

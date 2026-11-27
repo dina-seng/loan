@@ -32,10 +32,11 @@ export function todayISO() {
   return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
+/** Both bounds must live on the same field key, so build one range object. */
 export function dateWhere(field, from, to) {
   if (!from && !to) return {};
-  return {
-    ...(from ? { [field]: { gte: parseDate(from, 'from') } } : {}),
-    ...(to ? { [field]: { lte: parseDate(to, 'to') } } : {}),
-  };
+  const range = {};
+  if (from) range.gte = parseDate(from, 'from');
+  if (to) range.lte = parseDate(to, 'to');
+  return { [field]: range };
 }

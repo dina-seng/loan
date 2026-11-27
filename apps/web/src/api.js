@@ -1,4 +1,4 @@
-import { errorMessage } from './i18n/labels.js';
+import { errorMessage } from './strings.km.js';
 
 const BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
@@ -39,7 +39,7 @@ export async function api(path, { method = 'GET', body } = {}) {
       ...(body !== undefined ? { body: JSON.stringify(withPartner(body)) } : {}),
     });
   } catch {
-    throw new ApiError({ error: { code: 'NETWORK', message: 'មិនអាចភ្ជាប់ប្រព័ន្ធបានទេ សូមពិនិត្យអ៊ីនធឺណិត' } });
+    throw new ApiError({ error: { code: 'NETWORK' } });
   }
 
   let payload;

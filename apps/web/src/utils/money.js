@@ -1,10 +1,10 @@
-const khmerDigits = { '០': '0', '១': '1', '២': '2', '៣': '3', '៤': '4', '៥': '5', '៦': '6', '៧': '7', '៨': '8', '៩': '9' };
+import { RIER, khmerDigits, months as khmerMonths, numerals as khmerNumerals } from '../strings.km.js';
 
 /** Convert Khmer digits and common separators into a plain numeric string. */
 export function normalizeAmountInput(value) {
   return String(value ?? '')
     .replace(/[០-៩]/g, (digit) => khmerDigits[digit])
-    .replace(/[\s,៛]/g, '')
+    .replace(new RegExp(`[\\s,${RIER}]`, 'g'), '')
     .replace(/[^\d]/g, '');
 }
 
@@ -22,7 +22,7 @@ export function formatNumber(value) {
 }
 
 export function formatMoney(value) {
-  return `៛${formatNumber(value)}`;
+  return `${RIER}${formatNumber(value)}`;
 }
 
 /** Amount without the riel sign, always positive (the type carries the direction). */
@@ -31,9 +31,6 @@ export function formatPositive(value) {
   const positive = /^-\d+$/.test(digits) ? digits.slice(1) : digits;
   return formatMoney(positive);
 }
-
-const khmerMonths = ['មករា', 'កុម្ភៈ', 'មីនា', 'មេសា', 'ឧសភា', 'មិថុនា', 'កក្កដា', 'សីហា', 'កញ្ញា', 'តុលា', 'វិច្ឆិកា', 'ធ្នូ'];
-const khmerNumerals = ['០', '១', '២', '៣', '៤', '៥', '៦', '៧', '៨', '៩'];
 
 function toKhmerDigits(value) {
   return String(value).replace(/\d/g, (digit) => khmerNumerals[Number(digit)]);

@@ -1,7 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../auth.jsx';
 import { usePartner } from '../partners.jsx';
-import { labels } from '../i18n/labels.js';
+import { labels } from '../strings.km.js';
 import { formatDate, todayISO } from '../utils/money.js';
 import { LogOutIcon } from './Icons.jsx';
 import { ClockIcon, HomeIcon, UserIcon } from './NavIcons.jsx';

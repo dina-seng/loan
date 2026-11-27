@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, newEntryId } from '../api.js';
-import { labels, errorMessage } from '../i18n/labels.js';
+import { labels, errorMessage } from '../strings.km.js';
 import { useToast } from '../components/Toast.jsx';
 import { usePartner } from '../partners.jsx';
 import { BalanceCard, ConfirmDialog, EmptyState, InlineError, PageHeader } from '../components/Ui.jsx';
@@ -69,7 +69,7 @@ export default function DashboardPage() {
 
           <button
             type="button"
-            className="btn-primary w-full"
+            className="btn-settle w-full"
             disabled={isCleared || busy}
             onClick={() => setConfirmSettle(true)}
           >

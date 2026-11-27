@@ -6,11 +6,12 @@ import LoginPage from './pages/LoginPage.jsx';
 import { PartnerProvider } from './partners.jsx';
 import DashboardPage from './pages/DashboardPage.jsx';
 import HistoryPage from './pages/HistoryPage.jsx';
+import { labels } from './strings.km.js';
 
 function ProtectedLayout() {
   const { loading, user } = useAuth();
   if (loading) {
-    return <div className="flex min-h-screen items-center justify-center text-slate-500">កំពុងផ្ទុក...</div>;
+    return <div className="flex min-h-screen items-center justify-center text-slate-500">{labels.loading}</div>;
   }
   if (!user) return <Navigate to="/login" replace />;
   return <Layout />;

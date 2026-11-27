@@ -1,4 +1,4 @@
-import { labels } from '../i18n/labels.js';
+import { labels } from '../strings.km.js';
 import { formatDate, formatMoney, formatMonth, formatPositive, monthKey } from '../utils/money.js';
 import { EmptyState } from './Ui.jsx';
 
