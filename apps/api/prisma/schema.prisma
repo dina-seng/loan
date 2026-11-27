@@ -15,9 +15,10 @@ enum UserRole {
   MEMBER
 }
 
+// Direction is relative to Dad: the first value means the partner pays Dad.
 enum PaymentDirection {
-  OUDOM_TO_DAD
-  DAD_TO_OUDOM
+  PARTNER_TO_DAD
+  DAD_TO_PARTNER
 }
 
 enum ClosingStatus {
@@ -52,6 +53,26 @@ model User {
   voidedDeliveries     ProductDelivery[]     @relation("DeliveryVoidedBy")
   voidedPayments       Payment[]             @relation("PaymentVoidedBy")
   idempotencyKeys      IdempotencyKey[]
+}
+
+model Partner {
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String
+  phone         String?
+  note          String?
+  isActive      Boolean  @default(true)
+  openingBalance BigInt  @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  lendingTransactions LendingTransaction[]
+  deliveries          ProductDelivery[]
+  payments            Payment[]
+  settlements         Settlement[]
+  periodClosings      PeriodClosing[]
+
+  @@index([name])
+  @@index([isActive])
 }
 
 model AccountSettings {
@@ -93,24 +114,10 @@ model IdempotencyKey {
   @@index([expiresAt])
 }
 
-model Product {
-  id          String   @id @default(uuid()) @db.Uuid
-  name        String
-  unit        String
-  description String?
-  unitPrice   BigInt   @default(0)
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  deliveryItems DeliveryItem[]
-
-  @@index([name])
-}
-
 model LendingTransaction {
   id           String    @id @default(uuid()) @db.Uuid
   reference    String?   @unique
+  partnerId    String    @db.Uuid
   transactionDate DateTime @db.Date
   amount       BigInt
   note         String?
@@ -121,17 +128,19 @@ model LendingTransaction {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  createdBy User  @relation("LendingCreatedBy", fields: [createdById], references: [id])
-  voidedBy  User? @relation("LendingVoidedBy", fields: [voidedById], references: [id])
+  partner   Partner @relation(fields: [partnerId], references: [id])
+  createdBy User    @relation("LendingCreatedBy", fields: [createdById], references: [id])
+  voidedBy  User?   @relation("LendingVoidedBy", fields: [voidedById], references: [id])
 
-  @@index([transactionDate])
+  @@index([partnerId, transactionDate])
   @@index([voidedAt])
   @@index([createdById])
 }
 
 model ProductDelivery {
   id           String    @id @default(uuid()) @db.Uuid
-  reference    String    @unique
+  reference    String?   @unique
+  partnerId    String    @db.Uuid
   deliveryDate DateTime  @db.Date
   note         String?
   totalAmount  BigInt
@@ -143,35 +152,32 @@ model ProductDelivery {
   updatedAt    DateTime  @updatedAt
 
   items     DeliveryItem[]
+  partner   Partner        @relation(fields: [partnerId], references: [id])
   createdBy User           @relation("DeliveryCreatedBy", fields: [createdById], references: [id])
   voidedBy  User?          @relation("DeliveryVoidedBy", fields: [voidedById], references: [id])
 
-  @@index([deliveryDate])
+  @@index([partnerId, deliveryDate])
   @@index([voidedAt])
   @@index([createdById])
 }
 
 model DeliveryItem {
-  id                 String  @id @default(uuid()) @db.Uuid
-  deliveryId         String  @db.Uuid
-  productId          String  @db.Uuid
-  productNameSnapshot String
-  unit               String
-  quantity           Decimal @db.Decimal(18, 3)
-  unitPrice          BigInt
-  lineTotal          BigInt
-  sortOrder          Int     @default(0)
+  id         String  @id @default(uuid()) @db.Uuid
+  deliveryId String  @db.Uuid
+  quantity   Decimal @db.Decimal(18, 3)
+  unitPrice  BigInt
+  lineTotal  BigInt
+  note       String?
 
   delivery ProductDelivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
-  product  Product         @relation(fields: [productId], references: [id])
 
   @@index([deliveryId])
-  @@index([productId])
 }
 
 model Payment {
   id          String           @id @default(uuid()) @db.Uuid
   reference   String?          @unique
+  partnerId   String           @db.Uuid
   paymentDate DateTime         @db.Date
   direction   PaymentDirection
   amount      BigInt
@@ -185,11 +191,12 @@ model Payment {
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
-  createdBy User       @relation("PaymentCreatedBy", fields: [createdById], references: [id])
-  voidedBy  User?      @relation("PaymentVoidedBy", fields: [voidedById], references: [id])
+  partner   Partner      @relation(fields: [partnerId], references: [id])
+  createdBy User         @relation("PaymentCreatedBy", fields: [createdById], references: [id])
+  voidedBy  User?        @relation("PaymentVoidedBy", fields: [voidedById], references: [id])
   settlement Settlement? @relation(fields: [settlementId], references: [id])
 
-  @@index([paymentDate])
+  @@index([partnerId, paymentDate])
   @@index([voidedAt])
   @@index([direction])
   @@index([settlementId])
@@ -198,6 +205,7 @@ model Payment {
 model Settlement {
   id             String           @id @default(uuid()) @db.Uuid
   reference      String?          @unique
+  partnerId      String           @db.Uuid
   periodClosingId String?         @db.Uuid
   amount         BigInt
   direction      PaymentDirection
@@ -208,17 +216,20 @@ model Settlement {
   createdById    String           @db.Uuid
   createdAt      DateTime         @default(now())
 
+  partner       Partner        @relation(fields: [partnerId], references: [id])
   periodClosing PeriodClosing? @relation(fields: [periodClosingId], references: [id])
   createdBy     User           @relation("SettlementCreatedBy", fields: [createdById], references: [id])
   payments      Payment[]
 
+  @@index([partnerId])
   @@index([periodClosingId])
   @@index([createdAt])
 }
 
 model PeriodClosing {
   id             String        @id @default(uuid()) @db.Uuid
-  closingKey     String?       @unique
+  partnerId      String        @db.Uuid
+  closingKey     String?
   periodStart    DateTime      @db.Date
   periodEnd      DateTime      @db.Date
   closedAt       DateTime      @default(now())
@@ -236,10 +247,12 @@ model PeriodClosing {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
+  partner     Partner      @relation(fields: [partnerId], references: [id])
   closedBy    User         @relation("ClosingCreatedBy", fields: [closedById], references: [id])
   settlements Settlement[]
 
-  @@index([periodStart, periodEnd])
+  @@unique([partnerId, closingKey])
+  @@index([partnerId, periodStart, periodEnd])
   @@index([status])
 }
 

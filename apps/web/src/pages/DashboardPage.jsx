@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { labels, errorMessage } from '../i18n/labels.js';
 import { useToast } from '../components/Toast.jsx';
+import { usePartner } from '../partners.jsx';
 import { BalanceCard, EmptyState, InlineError, PageHeader, SummaryCard } from '../components/Ui.jsx';
 import EntryModal from '../components/EntryModal.jsx';
 import TransactionList from '../components/TransactionList.jsx';
@@ -15,6 +16,7 @@ export default function DashboardPage() {
   const [entryTab, setEntryTab] = useState(null);
   const [error, setError] = useState('');
   const { show } = useToast();
+  const { partner } = usePartner();
 
   const load = useCallback(async () => {
     try {
@@ -24,7 +26,7 @@ export default function DashboardPage() {
     } catch (err) {
       setError(errorMessage(err));
     }
-  }, [periodId]);
+  }, [periodId, partner?.id]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -38,7 +40,7 @@ export default function DashboardPage() {
     <>
       <PageHeader
         title={labels.dashboard}
-        subtitle={`${formatDate(todayISO())} · ${data?.account?.partnerName || labels.account}`}
+        subtitle={`${formatDate(todayISO())} · ${partner?.name || labels.selectPartner}`}
         action={
           <select className="input w-full sm:w-64" value={periodId} onChange={(event) => setPeriodId(event.target.value)} aria-label={labels.periodClosing}>
             <option value="">{labels.currentPeriod}</option>
@@ -54,7 +56,7 @@ export default function DashboardPage() {
       <InlineError message={error} />
       {!data ? <div className="py-16 text-center text-slate-500">{labels.loading}</div> : (
         <div className="space-y-5">
-          <BalanceCard balance={data.balance} direction={data.direction} openingBalance={data.period?.isHistorical ? undefined : data.account?.openingBalance} />
+          <BalanceCard balance={data.balance} direction={data.direction} partnerName={partner?.name || data.account?.partnerName} openingBalance={data.period?.isHistorical ? undefined : data.account?.openingBalance} />
 
           <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
             <SummaryCard label={labels.shortMoneyLent} amount={data.totals.totalLent} icon={BanknoteIcon} accent="text-amber-700" testId="total-lent" />

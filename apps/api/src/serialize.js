@@ -3,9 +3,23 @@ import { money } from './money.js';
 
 const dateOrNull = (value) => (value ? toISODate(value) : null);
 
+export function partnerJson(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    phone: row.phone,
+    note: row.note,
+    isActive: row.isActive,
+    openingBalance: money(row.openingBalance),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
 export function lendingJson(row) {
   return {
     id: row.id,
+    partnerId: row.partnerId,
     reference: row.reference,
     date: toISODate(row.transactionDate),
     amount: money(row.amount),
@@ -16,38 +30,23 @@ export function lendingJson(row) {
   };
 }
 
-export function productJson(row) {
-  return {
-    id: row.id,
-    name: row.name,
-    unit: row.unit,
-    description: row.description,
-    unitPrice: money(row.unitPrice),
-    isActive: row.isActive,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
-}
-
 export function deliveryJson(row) {
   return {
     id: row.id,
+    partnerId: row.partnerId,
     reference: row.reference,
     date: toISODate(row.deliveryDate),
     totalAmount: money(row.totalAmount),
     note: row.note,
     voidedAt: dateOrNull(row.voidedAt),
     voidReason: row.voidReason,
-    items: row.items?.map((item) => ({
+    items: (row.items || []).map((item) => ({
       id: item.id,
-      productId: item.productId,
-      productName: item.productNameSnapshot,
-      unit: item.unit,
       quantity: item.quantity.toString(),
       unitPrice: money(item.unitPrice),
       lineTotal: money(item.lineTotal),
-      sortOrder: item.sortOrder,
-    })) || [],
+      note: item.note,
+    })),
     createdAt: row.createdAt,
   };
 }
@@ -55,6 +54,7 @@ export function deliveryJson(row) {
 export function paymentJson(row) {
   return {
     id: row.id,
+    partnerId: row.partnerId,
     reference: row.reference,
     date: toISODate(row.paymentDate),
     direction: row.direction,
@@ -71,6 +71,7 @@ export function paymentJson(row) {
 export function settlementJson(row) {
   return {
     id: row.id,
+    partnerId: row.partnerId,
     reference: row.reference,
     amount: money(row.amount),
     direction: row.direction,
@@ -87,6 +88,7 @@ export function settlementJson(row) {
 export function closingJson(row) {
   return {
     id: row.id,
+    partnerId: row.partnerId,
     startDate: toISODate(row.periodStart),
     endDate: toISODate(row.periodEnd),
     closedAt: row.closedAt,

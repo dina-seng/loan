@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeBalance, EFFECT, summarize } from '../../src/ledger.js';
+import { computeBalance, directionLabel, EFFECT, summarize } from '../../src/ledger.js';
 import { lineTotalFromScaled, parseAmount, parseQuantity, scaledToDecimal } from '../../src/money.js';
 import { parseDate, assertRange } from '../../src/dates.js';
 
@@ -21,25 +21,25 @@ describe('central balance calculation', () => {
   });
 
   it('3. Oudom payment to Dad decreases the balance', () => {
-    expect(computeBalance([entry('LENDING', 400000), entry('PAYMENT', 150000, 'OUDOM_TO_DAD')], 100000)).toBe(350000n);
+    expect(computeBalance([entry('LENDING', 400000), entry('PAYMENT', 150000, 'PARTNER_TO_DAD')], 100000)).toBe(350000n);
   });
 
   it('4. Dad payment to Oudom increases the balance', () => {
-    expect(computeBalance([entry('LENDING', 400000), entry('PAYMENT', 50000, 'DAD_TO_OUDOM')], 100000)).toBe(550000n);
+    expect(computeBalance([entry('LENDING', 400000), entry('PAYMENT', 50000, 'DAD_TO_PARTNER')], 100000)).toBe(550000n);
   });
 
   it('matches the worked example exactly', () => {
     const entries = [
       entry('LENDING', 400000),
       entry('DELIVERY', 200000),
-      entry('PAYMENT', 150000, 'OUDOM_TO_DAD'),
+      entry('PAYMENT', 150000, 'PARTNER_TO_DAD'),
     ];
     expect(computeBalance(entries, 100000)).toBe(150000n);
   });
 
   it('5. partial payments leave a remainder and can flip direction', () => {
-    expect(computeBalance([entry('LENDING', 100000), entry('PAYMENT', 40000, 'OUDOM_TO_DAD')])).toBe(60000n);
-    expect(computeBalance([entry('LENDING', 100000), entry('PAYMENT', 120000, 'OUDOM_TO_DAD')])).toBe(-20000n);
+    expect(computeBalance([entry('LENDING', 100000), entry('PAYMENT', 40000, 'PARTNER_TO_DAD')])).toBe(60000n);
+    expect(computeBalance([entry('LENDING', 100000), entry('PAYMENT', 120000, 'PARTNER_TO_DAD')])).toBe(-20000n);
   });
 
   it('6. opening balances carry forward without re-adding closed records', () => {
@@ -64,6 +64,14 @@ describe('central balance calculation', () => {
 
   it('uses exact integers for very large amounts', () => {
     expect(computeBalance([entry('LENDING', 9000000000000000)], 1)).toBe(9000000000000001n);
+  });
+});
+
+describe('partner-aware labels', () => {
+  it('uses the selected partner name in payment directions', () => {
+    expect(directionLabel('PAYMENT', 'PARTNER_TO_DAD', 'សុភី')).toBe('សុភី → ប៉ា');
+    expect(directionLabel('PAYMENT', 'DAD_TO_PARTNER', 'សុភី')).toBe('ប៉ា → សុភី');
+    expect(directionLabel('LENDING', null, 'សុភី')).toBe('ការឱ្យខ្ចីប្រាក់');
   });
 });
 

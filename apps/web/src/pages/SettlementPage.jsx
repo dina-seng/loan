@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, newIdempotencyKey } from '../api.js';
-import { labels, errorMessage } from '../i18n/labels.js';
+import { labels, errorMessage, dadPaysPartner, partnerPaysDad } from '../i18n/labels.js';
+import { usePartner } from '../partners.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { AmountField, ConfirmDialog, Field, InlineError, PageHeader } from '../components/Ui.jsx';
 import { formatDate, formatMoney, todayISO } from '../utils/money.js';
@@ -15,7 +16,7 @@ export default function SettlementPage() {
   const [startDate, setStartDate] = useState(firstOfMonth());
   const [endDate, setEndDate] = useState(todayISO());
   const [preview, setPreview] = useState(null);
-  const [settlement, setSettlement] = useState({ amount: '', direction: 'OUDOM_TO_DAD', method: 'cash', note: '' });
+  const [settlement, setSettlement] = useState({ amount: '', direction: 'PARTNER_TO_DAD', method: 'cash', note: '' });
   const [confirmClose, setConfirmClose] = useState(false);
   const [confirmSettle, setConfirmSettle] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -24,6 +25,8 @@ export default function SettlementPage() {
   const closeKey = useMemo(() => newIdempotencyKey(), [startDate, endDate]);
   const settleKey = useMemo(() => newIdempotencyKey(), [settlement.amount, settlement.direction]);
   const { show } = useToast();
+  const { partner } = usePartner();
+  const partnerName = partner?.name || 'អ៊ូដុំ';
 
   const load = useCallback(async () => {
     try {
@@ -37,7 +40,7 @@ export default function SettlementPage() {
     } catch (err) {
       setError(errorMessage(err));
     }
-  }, [startDate, endDate]);
+  }, [startDate, endDate, partner?.id]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -56,7 +59,7 @@ export default function SettlementPage() {
       });
       show(labels.saved);
       setConfirmSettle(false);
-      setSettlement({ amount: '', direction: 'OUDOM_TO_DAD', method: 'cash', note: '' });
+      setSettlement({ amount: '', direction: 'PARTNER_TO_DAD', method: 'cash', note: '' });
       await load();
     } catch (err) {
       setError(errorMessage(err));
@@ -89,7 +92,7 @@ export default function SettlementPage() {
 
   return (
     <>
-      <PageHeader title={labels.settlement} subtitle={`${labels.periodClosing} · ${labels.preview}`} />
+      <PageHeader title={labels.settlement} subtitle={`${partnerName} · ${labels.periodClosing}`} />
 
       <section className="card mb-4 p-3 sm:p-4">
         <div className="grid gap-3 sm:grid-cols-2">
@@ -136,8 +139,8 @@ export default function SettlementPage() {
               <AmountField label={labels.settlementAmount} value={settlement.amount} onChange={(value) => setSettlement({ ...settlement, amount: value })} />
               <Field label={labels.direction}>
                 <select className="input" value={settlement.direction} onChange={(event) => setSettlement({ ...settlement, direction: event.target.value })}>
-                  <option value="OUDOM_TO_DAD">{labels.oudomPaysDad}</option>
-                  <option value="DAD_TO_OUDOM">{labels.dadPaysOudom}</option>
+                  <option value="PARTNER_TO_DAD">{partnerPaysDad(partnerName)}</option>
+                  <option value="DAD_TO_PARTNER">{dadPaysPartner(partnerName)}</option>
                 </select>
               </Field>
               <Field label={labels.note}>

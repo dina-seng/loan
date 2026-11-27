@@ -38,7 +38,7 @@ export default function TransactionList({ entries = [], onVoid, emptyMessage }) 
                 <time className="text-xs text-slate-500">{formatDate(entry.date)}</time>
               </div>
               <p className="mt-1 truncate text-sm font-semibold text-slate-800" title={entry.description}>{entry.description}</p>
-              <p className="truncate text-xs text-slate-500">{entry.reference || entry.direction}</p>
+              {entry.kind !== 'DELIVERY' && <p className="truncate text-xs text-slate-500">{entry.reference || entry.direction}</p>}
             </div>
             <div className="flex shrink-0 flex-col items-end gap-1">
               <Amount entry={entry} />
@@ -70,7 +70,7 @@ export default function TransactionList({ entries = [], onVoid, emptyMessage }) 
                 <td className="px-3 py-3"><span className={`chip ${kindStyle[entry.kind] || 'bg-slate-100 text-slate-700'}`}>{kindLabel[entry.kind] || entry.kind}</span></td>
                 <td className="px-3 py-3">
                   <p className="truncate font-semibold text-slate-800">{entry.description}</p>
-                  <p className="truncate text-xs text-slate-500">{entry.reference || entry.direction}</p>
+                  {entry.kind !== 'DELIVERY' && <p className="truncate text-xs text-slate-500">{entry.reference || entry.direction}</p>}
                 </td>
                 <td className="px-3 py-3 text-right"><Amount entry={entry} /></td>
                 <td className="px-3 py-3 text-right">

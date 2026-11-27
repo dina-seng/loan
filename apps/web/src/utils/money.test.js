@@ -17,7 +17,7 @@ describe('Khmer money helpers', () => {
   });
 
   it('uses three distinct visual tones for balance states', () => {
-    expect(balanceTone('OUDOM_OWES_DAD').dot).not.toBe(balanceTone('DAD_OWES_OUDOM').dot);
-    expect(balanceTone('SETTLED').dot).not.toBe(balanceTone('OUDOM_OWES_DAD').dot);
+    expect(balanceTone('PARTNER_OWES_DAD').dot).not.toBe(balanceTone('DAD_OWES_PARTNER').dot);
+    expect(balanceTone('SETTLED').dot).not.toBe(balanceTone('PARTNER_OWES_DAD').dot);
   });
 });

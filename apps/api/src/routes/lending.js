@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import { authRequired } from '../auth.js';
 import { prisma } from '../db.js';
 import { asyncHandler, notFound, ok } from '../errors.js';
 import { assertNotClosed } from '../ledger.js';
@@ -8,15 +7,15 @@ import { parseDate, dateWhere } from '../dates.js';
 import { lendingJson } from '../serialize.js';
 import { lendingCreateSchema, listQuerySchema, validate, voidSchema } from '../schemas.js';
 import { idempotent } from '../idempotency.js';
+import { assertPartnerAccess } from '../partner.js';
 import { audit, jsonSafe } from '../audit.js';
 
 export const lendingRouter = Router();
 
-lendingRouter.use(authRequired);
-
 lendingRouter.get('/', validate(listQuerySchema, 'query'), asyncHandler(async (req, res) => {
   const { page, pageSize, from, to, search, includeVoided } = req.valid;
   const where = {
+    partnerId: req.partnerId,
     ...dateWhere('transactionDate', from, to),
     ...(includeVoided ? {} : { voidedAt: null }),
     ...(search ? { OR: [{ note: { contains: search, mode: 'insensitive' } }, { reference: { contains: search, mode: 'insensitive' } }] } : {}),
@@ -32,7 +31,7 @@ lendingRouter.get('/', validate(listQuerySchema, 'query'), asyncHandler(async (r
 }));
 
 lendingRouter.get('/:id', asyncHandler(async (req, res) => {
-  const row = await prisma.lendingTransaction.findUnique({ where: { id: req.params.id } });
+  const row = await prisma.lendingTransaction.findFirst({ where: { id: req.params.id, partnerId: req.partnerId } });
   if (!row) throw notFound();
   ok(res, lendingJson(row));
 }));
@@ -41,9 +40,10 @@ lendingRouter.post('/', validate(lendingCreateSchema), idempotent('lending'), as
   const data = req.valid;
   const transactionDate = parseDate(data.transactionDate);
   const amount = parseAmount(data.amount);
-  await assertNotClosed(transactionDate);
+  await assertNotClosed(transactionDate, prisma, req.partnerId);
   const row = await prisma.lendingTransaction.create({
     data: {
+      partnerId: req.partnerId,
       transactionDate, amount, note: data.note, reference: data.reference || null,
       createdById: req.user.id,
     },
@@ -53,10 +53,11 @@ lendingRouter.post('/', validate(lendingCreateSchema), idempotent('lending'), as
 }));
 
 lendingRouter.post('/:id/void', validate(voidSchema), idempotent('lending-void'), asyncHandler(async (req, res) => {
-  const row = await prisma.lendingTransaction.findUnique({ where: { id: req.params.id } });
-  if (!row) throw notFound();
+  const row = assertPartnerAccess(
+    await prisma.lendingTransaction.findUnique({ where: { id: req.params.id } }), req,
+  );
   if (row.voidedAt) throw notFound();
-  await assertNotClosed(row.transactionDate);
+  await assertNotClosed(row.transactionDate, prisma, req.partnerId);
   const updated = await prisma.lendingTransaction.update({
     where: { id: row.id },
     data: { voidedAt: new Date(), voidedById: req.user.id, voidReason: req.valid.reason || null },

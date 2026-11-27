@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import { authRequired } from '../auth.js';
 import { prisma } from '../db.js';
 import { asyncHandler, notFound, ok } from '../errors.js';
 import { assertNotClosed } from '../ledger.js';
@@ -8,14 +7,15 @@ import { parseDate, dateWhere } from '../dates.js';
 import { paymentJson } from '../serialize.js';
 import { listQuerySchema, paymentCreateSchema, validate, voidSchema } from '../schemas.js';
 import { idempotent } from '../idempotency.js';
+import { assertPartnerAccess } from '../partner.js';
 import { audit, jsonSafe } from '../audit.js';
 
 export const paymentsRouter = Router();
-paymentsRouter.use(authRequired);
 
 paymentsRouter.get('/', validate(listQuerySchema, 'query'), asyncHandler(async (req, res) => {
   const { page, pageSize, from, to, search, includeVoided } = req.valid;
   const where = {
+    partnerId: req.partnerId,
     ...dateWhere('paymentDate', from, to),
     ...(includeVoided ? {} : { voidedAt: null }),
     ...(search ? { OR: [{ note: { contains: search, mode: 'insensitive' } }, { reference: { contains: search, mode: 'insensitive' } }] } : {}),
@@ -31,7 +31,7 @@ paymentsRouter.get('/', validate(listQuerySchema, 'query'), asyncHandler(async (
 }));
 
 paymentsRouter.get('/:id', asyncHandler(async (req, res) => {
-  const row = await prisma.payment.findUnique({ where: { id: req.params.id } });
+  const row = await prisma.payment.findFirst({ where: { id: req.params.id, partnerId: req.partnerId } });
   if (!row) throw notFound();
   ok(res, paymentJson(row));
 }));
@@ -40,9 +40,10 @@ paymentsRouter.post('/', validate(paymentCreateSchema), idempotent('payment'), a
   const data = req.valid;
   const paymentDate = parseDate(data.paymentDate);
   const amount = parseAmount(data.amount);
-  await assertNotClosed(paymentDate);
+  await assertNotClosed(paymentDate, prisma, req.partnerId);
   const row = await prisma.payment.create({
     data: {
+      partnerId: req.partnerId,
       paymentDate,
       direction: data.direction,
       amount,
@@ -58,10 +59,9 @@ paymentsRouter.post('/', validate(paymentCreateSchema), idempotent('payment'), a
 }));
 
 paymentsRouter.post('/:id/void', validate(voidSchema), idempotent('payment-void'), asyncHandler(async (req, res) => {
-  const row = await prisma.payment.findUnique({ where: { id: req.params.id } });
-  if (!row) throw notFound();
+  const row = assertPartnerAccess(await prisma.payment.findUnique({ where: { id: req.params.id } }), req);
   if (row.voidedAt) throw notFound();
-  await assertNotClosed(row.paymentDate);
+  await assertNotClosed(row.paymentDate, prisma, req.partnerId);
   const updated = await prisma.payment.update({
     where: { id: row.id },
     data: { voidedAt: new Date(), voidedById: req.user.id, voidReason: req.valid.reason || null },

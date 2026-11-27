@@ -51,7 +51,7 @@ export function todayISO() {
 }
 
 export function balanceTone(direction) {
-  if (direction === 'OUDOM_OWES_DAD') return { text: 'text-amber-900', bg: 'from-amber-50 to-orange-50', border: 'border-amber-300', dot: 'bg-amber-500' };
-  if (direction === 'DAD_OWES_OUDOM') return { text: 'text-sky-900', bg: 'from-sky-50 to-blue-50', border: 'border-sky-300', dot: 'bg-sky-500' };
+  if (direction === 'PARTNER_OWES_DAD') return { text: 'text-amber-900', bg: 'from-amber-50 to-orange-50', border: 'border-amber-300', dot: 'bg-amber-500' };
+  if (direction === 'DAD_OWES_PARTNER') return { text: 'text-sky-900', bg: 'from-sky-50 to-blue-50', border: 'border-sky-300', dot: 'bg-sky-500' };
   return { text: 'text-emerald-900', bg: 'from-emerald-50 to-teal-50', border: 'border-emerald-300', dot: 'bg-emerald-500' };
 }

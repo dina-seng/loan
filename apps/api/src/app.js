@@ -10,9 +10,11 @@ import { config } from './config.js';
 import { prisma } from './db.js';
 import { errorHandler, ok } from './errors.js';
 import { authRouter } from './routes/auth.js';
+import { authRequired } from './auth.js';
+import { partnerRequired } from './partner.js';
+import { partnersRouter } from './routes/partners.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { lendingRouter } from './routes/lending.js';
-import { productsRouter } from './routes/products.js';
 import { deliveriesRouter } from './routes/deliveries.js';
 import { paymentsRouter } from './routes/payments.js';
 import { settlementsRouter } from './routes/settlements.js';
@@ -53,7 +55,7 @@ export function createApp() {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Idempotency-Key'],
+    allowedHeaders: ['Content-Type', 'Idempotency-Key', 'X-Partner-Id'],
   }));
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
@@ -70,9 +72,14 @@ export function createApp() {
   const api = express.Router();
   api.get('/health', (_req, res) => ok(res, { status: 'ok' }));
   api.use('/auth', authRouter);
+  api.use('/partners', partnersRouter);
+
+  // Every financial route is scoped to the selected partner before reaching its router.
+  const partnerScoped = ['/dashboard', '/lending', '/deliveries', '/payments', '/settlements', '/period-closings', '/transactions', '/reports'];
+  api.use(partnerScoped, authRequired, partnerRequired);
+
   api.use('/dashboard', dashboardRouter);
   api.use('/lending', lendingRouter);
-  api.use('/products', productsRouter);
   api.use('/deliveries', deliveriesRouter);
   api.use('/payments', paymentsRouter);
   api.use('/settlements', settlementsRouter);

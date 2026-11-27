@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { labels, errorMessage } from '../i18n/labels.js';
+import { usePartner } from '../partners.jsx';
 import { Field, InlineError, PageHeader } from '../components/Ui.jsx';
 import TransactionList from '../components/TransactionList.jsx';
 import { DownloadIcon } from '../components/Icons.jsx';
@@ -22,6 +23,7 @@ export default function HistoryPage() {
   const [filters, setFilters] = useState({ type: '', from: '', to: '', search: '' });
   const [entries, setEntries] = useState([]);
   const [error, setError] = useState('');
+  const { partner } = usePartner();
 
   const loadList = useCallback(async () => {
     try {
@@ -31,7 +33,7 @@ export default function HistoryPage() {
     } catch (err) {
       setError(errorMessage(err));
     }
-  }, [selectedId]);
+  }, [selectedId, partner?.id]);
 
   const loadStatement = useCallback(async () => {
     if (!selectedId) return setStatement(null);
@@ -42,7 +44,7 @@ export default function HistoryPage() {
     } catch (err) {
       setError(errorMessage(err));
     }
-  }, [selectedId]);
+  }, [selectedId, partner?.id]);
 
   const loadEntries = useCallback(async () => {
     const params = new URLSearchParams({ pageSize: '100' });
@@ -53,8 +55,9 @@ export default function HistoryPage() {
     } catch (err) {
       setError(errorMessage(err));
     }
-  }, [filters]);
+  }, [filters, partner?.id]);
 
+  useEffect(() => { setSelectedId(''); setStatement(null); }, [partner?.id]);
   useEffect(() => { loadList(); }, [loadList]);
   useEffect(() => { loadStatement(); }, [loadStatement]);
   useEffect(() => { loadEntries(); }, [loadEntries]);
@@ -62,7 +65,7 @@ export default function HistoryPage() {
   return (
     <>
       <PageHeader title={labels.history} subtitle={labels.printableStatement} action={
-        <a className="btn-secondary" href={`${import.meta.env.VITE_API_URL || ''}/api/v1/reports/transactions.csv`} download>
+        <a className="btn-secondary" href={`${import.meta.env.VITE_API_URL || ''}/api/v1/reports/transactions.csv?partnerId=${partner?.id || ''}`} download>
           <DownloadIcon className="h-5 w-5" />{labels.exportCsv}
         </a>
       } />

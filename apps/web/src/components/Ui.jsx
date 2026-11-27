@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { labels } from '../i18n/labels.js';
+import { labels, dadOwesPartner, partnerOwesDad } from '../i18n/labels.js';
 import { balanceTone, formatMoney } from '../utils/money.js';
 import { AlertCircleIcon, XIcon } from './Icons.jsx';
 
@@ -98,10 +98,10 @@ export function SummaryCard({ label, amount, icon: Icon, accent = 'text-brand-70
   );
 }
 
-export function BalanceCard({ balance, direction, openingBalance, compact = false }) {
+export function BalanceCard({ balance, direction, openingBalance, partnerName = 'អ៊ូដុំ', compact = false }) {
   const tone = balanceTone(direction);
-  const message = direction === 'OUDOM_OWES_DAD' ? labels.oudomOwesDad
-    : direction === 'DAD_OWES_OUDOM' ? labels.dadOwesOudom : labels.accountSettled;
+  const message = direction === 'PARTNER_OWES_DAD' ? partnerOwesDad(partnerName)
+    : direction === 'DAD_OWES_PARTNER' ? dadOwesPartner(partnerName) : labels.accountSettled;
   return (
     <section className={`card border-2 bg-gradient-to-br ${tone.bg} ${tone.border} ${compact ? 'p-4' : 'p-5 sm:p-6'}`}>
       <div className="flex items-center gap-2">

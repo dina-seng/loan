@@ -2,12 +2,28 @@ import { errorMessage } from './i18n/labels.js';
 
 const BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
+const PARTNER_KEY = 'bl_partner_id';
+
+export function getSelectedPartnerId() {
+  try { return localStorage.getItem(PARTNER_KEY) || ''; } catch { return ''; }
+}
+
+export function setSelectedPartnerId(id) {
+  try { if (id) localStorage.setItem(PARTNER_KEY, id); else localStorage.removeItem(PARTNER_KEY); } catch { /* ignore */ }
+}
+
 export class ApiError extends Error {
   constructor(payload) {
     super(errorMessage(payload?.error));
     this.code = payload?.error?.code;
     this.details = payload?.error?.details;
   }
+}
+
+function withPartner(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return body;
+  const id = getSelectedPartnerId();
+  return id ? { ...body, partnerId: id } : body;
 }
 
 export async function api(path, { method = 'GET', body, idempotencyKey } = {}) {
@@ -19,8 +35,9 @@ export async function api(path, { method = 'GET', body, idempotencyKey } = {}) {
       headers: {
         ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
+        ...(getSelectedPartnerId() ? { 'X-Partner-Id': getSelectedPartnerId() } : {}),
       },
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      ...(body !== undefined ? { body: JSON.stringify(withPartner(body)) } : {}),
     });
   } catch {
     throw new ApiError({ error: { code: 'NETWORK', message: 'មិនអាចភ្ជាប់ប្រព័ន្ធបានទេ សូមពិនិត្យអ៊ីនធឺណិត' } });

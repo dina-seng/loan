@@ -25,6 +25,17 @@ The legacy app (React + Google Apps Script + Google Sheets) was audited, then re
 | No real API integration tests | Vitest + Supertest covering all 14 required financial scenarios |
 | Float rounding risk | Bigint arithmetic end to end; JSON money is stringified |
 
+## Post-migration updates (v2.1)
+
+- Added the `partners` table and `partnerId` on lending, delivery, payment, settlement and closing records. The migration backfills all pre-existing rows to a fallback partner named `អ៊ូដុំ` and carries the old account opening balance into that partner.
+- Added a per-partner `openingBalance`; `AccountSettings.openingBalance` is only used as the fallback during migration.
+- Removed the product catalog entirely. `delivery_items` now stores only quantity, unit price, server-computed line total and an optional note.
+- Renamed the payment direction enum to `PARTNER_TO_DAD` / `DAD_TO_PARTNER`; migration SQL maps the old values.
+- Closing uniqueness and overlap checks are now scoped to `(partnerId, closingKey)` / `partnerId`.
+- Browser state persists the selected partner in `localStorage` and sends it as `X-Partner-Id` on every API request (and `partnerId` in mutation bodies).
+- Removed the `requireOwner` role gate and the inactive-partner write block: any authenticated user can create/edit partners and record/void transactions.
+- Made `ProductDelivery.reference` nullable; the server generates an internal code when none is supplied and the UI never shows delivery codes.
+
 ## Reused work
 
 - `src/components/Icons.jsx` → `apps/web/src/components/Icons.jsx` (dependency-free SVG icons).

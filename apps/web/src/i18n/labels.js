@@ -22,9 +22,15 @@ export const labels = {
   currentBalance: 'សមតុល្យបច្ចុប្បន្ន',
   openingBalance: 'សមតុល្យដើម',
   closingBalance: 'សមតុល្យចុងក្រោយ',
-  oudomOwesDad: 'អ៊ូដុំជំពាក់ប្រាក់ប៉ា',
-  dadOwesOudom: 'ប៉ាជំពាក់ប្រាក់អ៊ូដុំ',
   accountSettled: 'បានទូទាត់រួចរាល់',
+  partner: 'ដៃគូ',
+  partners: 'ដៃគូ',
+  partnerName: 'ឈ្មោះដៃគូ',
+  selectPartner: 'ជ្រើសរើសដៃគូ',
+  addPartner: 'បន្ថែមដៃគូ',
+  editName: 'កែប្រែឈ្មោះ',
+  phone: 'លេខទូរស័ព្ទ',
+  openingBalanceFor: 'សមតុល្យដើមរបស់ដៃគូ',
   addTransaction: 'បន្ថែមប្រតិបត្តិការ',
   save: 'រក្សាទុក',
   cancel: 'បោះបង់',
@@ -45,8 +51,6 @@ export const labels = {
   unitPrice: 'តម្លៃឯកតា',
   lineTotal: 'សរុបជួរ',
   total: 'សរុប',
-  productName: 'ឈ្មោះទំនិញ',
-  unit: 'ឯកតា',
   active: 'កំពុងប្រើ',
   inactive: 'បានបិទ',
   deactivate: 'បិទទំនិញ',
@@ -76,14 +80,12 @@ export const labels = {
   no: 'ទេ',
   confirm: 'បញ្ជាក់',
   areYouSure: 'តើអ្នកប្រាកដហើយមែនទេ?',
-  addProduct: 'បន្ថែមទំនិញ',
-  addItem: 'បន្ថែមទំនិញមួយទៀត',
+  addItem: 'បន្ថែមជួរទំនិញ',
   removeItem: 'ដកចេញ',
   settlementAmount: 'ចំនួនលុយដែលទូទាត់',
   partialSettlement: 'ទូទាត់ផ្នែក',
   fullSettlement: 'ទូទាត់ពេញ',
-  oudomPaysDad: 'អ៊ូដុំបង់ប្រាក់ប៉ា',
-  dadPaysOudom: 'ប៉ាបង់ប្រាក់អ៊ូដុំ',
+  paymentMethod: 'វិធីទូទាត់',
   cash: 'សាច់ប្រាក់',
   bank: 'ផ្ទេរធនាគារ',
   other: 'ផ្សេងៗ',
@@ -91,6 +93,12 @@ export const labels = {
   saved: 'រក្សាទុករួចរាល់',
   error: 'មានបញ្ហាកើតឡើង',
 };
+
+/** Dynamic Khmer balance and payment labels use the selected partner's name. */
+export const partnerOwesDad = (name) => `${name} ជំពាក់ប្រាក់ប៉ា`;
+export const dadOwesPartner = (name) => `ប៉ាជំពាក់ប្រាក់ ${name}`;
+export const partnerPaysDad = (name) => `${name} សងប្រាក់មកប៉ា`;
+export const dadPaysPartner = (name) => `ប៉ាសងប្រាក់ទៅ ${name}`;
 
 export const errorMessages = {
   VALIDATION_ERROR: 'ទិន្នន័យបញ្ចូលមិនត្រឹមត្រូវ សូមពិនិត្យឡើងវិញ',
@@ -108,5 +116,12 @@ export const errorMessages = {
 };
 
 export function errorMessage(error) {
-  return errorMessages[error?.code] || error?.message || labels.error;
+  // Field-level messages from the backend are the most specific.
+  const details = error?.details;
+  if (details && typeof details === 'object') {
+    const specific = Object.values(details).find((value) => typeof value === 'string' && value.trim());
+    if (specific) return specific;
+  }
+  if (error?.message) return error.message;
+  return errorMessages[error?.code] || labels.error;
 }

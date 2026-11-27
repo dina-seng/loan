@@ -4,23 +4,39 @@ import { AppError } from './errors.js';
 import { money, sumAmounts } from './money.js';
 
 /**
- * The sign each validated ledger record contributes to the mutual balance.
- * Positive means Oudom owes Dad more. Negative means Dad owes Oudom more.
- * This is the ONLY place in the backend where financial direction is defined.
+ * The sign each validated ledger record contributes to its partner's mutual
+ * balance. Positive means the partner owes Dad more; negative means Dad owes
+ * the partner more. This is the ONLY place where financial direction is defined.
  */
 export const EFFECT = Object.freeze({
   LENDING: 1n,
   DELIVERY: -1n,
-  OUDOM_TO_DAD: -1n,
-  DAD_TO_OUDOM: 1n,
+  PARTNER_TO_DAD: -1n,
+  DAD_TO_PARTNER: 1n,
 });
 
-export const DIRECTION_LABEL = Object.freeze({
+export const KIND_LABEL = Object.freeze({
   LENDING: 'ការឱ្យខ្ចីប្រាក់',
   DELIVERY: 'ការទទួលទំនិញ',
-  OUDOM_TO_DAD: 'អ៊ូដុំ → ប៉ា',
-  DAD_TO_OUDOM: 'ប៉ា → អ៊ូដុំ',
 });
+
+/** Backwards-compatible alias for callers that only need the static labels. */
+export const DIRECTION_LABEL = KIND_LABEL;
+
+export function directionLabel(kind, direction, partnerName = 'អ៊ូដុំ') {
+  if (kind === 'PAYMENT') {
+    return direction === 'PARTNER_TO_DAD'
+      ? `${partnerName} → ប៉ា`
+      : `ប៉ា → ${partnerName}`;
+  }
+  return KIND_LABEL[kind] || '';
+}
+
+export function balanceDirection(balance) {
+  if (balance > 0n) return 'PARTNER_OWES_DAD';
+  if (balance < 0n) return 'DAD_OWES_PARTNER';
+  return 'SETTLED';
+}
 
 /** Pure balance calculation. `entries` must provide exact `signedAmount` bigints. */
 export function computeBalance(entries = [], openingBalance = 0n) {
@@ -29,13 +45,7 @@ export function computeBalance(entries = [], openingBalance = 0n) {
 
 /** Pure period totals used by dashboard, statements and closing snapshots. */
 export function summarize(entries = []) {
-  const totals = {
-    totalLent: 0n,
-    totalDelivered: 0n,
-    totalReceived: 0n,
-    totalPaidOut: 0n,
-    count: 0,
-  };
+  const totals = { totalLent: 0n, totalDelivered: 0n, totalReceived: 0n, totalPaidOut: 0n, count: 0 };
   for (const entry of entries) {
     if (entry.voidedAt) continue;
     totals.count += 1;
@@ -43,7 +53,7 @@ export function summarize(entries = []) {
       case 'LENDING': totals.totalLent += BigInt(entry.amount); break;
       case 'DELIVERY': totals.totalDelivered += BigInt(entry.amount); break;
       case 'PAYMENT':
-        if (entry.direction === 'OUDOM_TO_DAD') totals.totalReceived += BigInt(entry.amount);
+        if (entry.direction === 'PARTNER_TO_DAD') totals.totalReceived += BigInt(entry.amount);
         else totals.totalPaidOut += BigInt(entry.amount);
         break;
       default: break;
@@ -55,10 +65,11 @@ export function summarize(entries = []) {
 function normalizeEntry(entry) {
   return {
     id: entry.id,
+    partnerId: entry.partnerId,
     kind: entry.kind,
     date: toISODate(entry.date),
     reference: entry.reference || null,
-    description: entry.description || DIRECTION_LABEL[entry.kind] || '',
+    description: entry.description || '',
     amount: BigInt(entry.amount),
     direction: entry.direction || entry.kind,
     signedAmount: BigInt(entry.signedAmount),
@@ -71,6 +82,7 @@ function normalizeEntry(entry) {
 export function serializeEntry(entry) {
   return {
     id: entry.id,
+    partnerId: entry.partnerId,
     kind: entry.kind,
     date: entry.date,
     reference: entry.reference,
@@ -84,34 +96,40 @@ export function serializeEntry(entry) {
 }
 
 /**
- * Read the validated, non-voided ledger records for an optional date range.
+ * Read validated, non-voided ledger records for one partner (optionally a date range).
  * All balance calculations in the app go through here.
  */
-export async function fetchLedgerEntries({ from, to, includeVoided = false, client = prisma } = {}) {
+export async function fetchLedgerEntries({ partnerId, partnerName = 'អ៊ូដុំ', from, to, includeVoided = false, client = prisma } = {}) {
   const active = includeVoided ? {} : { voidedAt: null };
+  const scope = partnerId ? { partnerId } : {};
   const [lendings, deliveries, payments] = await Promise.all([
-    client.lendingTransaction.findMany({ where: { ...dateWhere('transactionDate', from, to), ...active } }),
-    client.productDelivery.findMany({ where: { ...dateWhere('deliveryDate', from, to), ...active } }),
-    client.payment.findMany({ where: { ...dateWhere('paymentDate', from, to), ...active } }),
+    client.lendingTransaction.findMany({ where: { ...scope, ...dateWhere('transactionDate', from, to), ...active } }),
+    client.productDelivery.findMany({ where: { ...scope, ...dateWhere('deliveryDate', from, to), ...active } }),
+    client.payment.findMany({ where: { ...scope, ...dateWhere('paymentDate', from, to), ...active } }),
   ]);
 
   const entries = [
     ...lendings.map((row) => normalizeEntry({
-      id: row.id, kind: 'LENDING', date: row.transactionDate, reference: row.reference,
-      description: row.note || DIRECTION_LABEL.LENDING, amount: row.amount,
-      signedAmount: row.amount * EFFECT.LENDING, voidedAt: row.voidedAt, createdAt: row.createdAt,
+      id: row.id, partnerId: row.partnerId, kind: 'LENDING', date: row.transactionDate,
+      reference: row.reference,
+      description: row.note ? `${directionLabel('LENDING')} · ${row.note}` : directionLabel('LENDING'),
+      amount: row.amount, signedAmount: row.amount * EFFECT.LENDING,
+      voidedAt: row.voidedAt, createdAt: row.createdAt,
     })),
     ...deliveries.map((row) => normalizeEntry({
-      id: row.id, kind: 'DELIVERY', date: row.deliveryDate, reference: row.reference,
-      description: `OD-${row.reference}${row.note ? ` · ${row.note}` : ''}`,
+      id: row.id, partnerId: row.partnerId, kind: 'DELIVERY', date: row.deliveryDate,
+      reference: null, // internal delivery codes are never shown to the user
+      description: `${directionLabel('DELIVERY')}${row.note ? ` · ${row.note}` : ''}`,
       amount: row.totalAmount, signedAmount: row.totalAmount * EFFECT.DELIVERY,
       voidedAt: row.voidedAt, createdAt: row.createdAt,
     })),
     ...payments.map((row) => normalizeEntry({
-      id: row.id, kind: 'PAYMENT', date: row.paymentDate, reference: row.reference,
-      description: row.note || DIRECTION_LABEL[row.direction], amount: row.amount,
-      direction: row.direction,
-      signedAmount: row.amount * EFFECT[row.direction], voidedAt: row.voidedAt, createdAt: row.createdAt,
+      id: row.id, partnerId: row.partnerId, kind: 'PAYMENT', date: row.paymentDate,
+      reference: row.reference,
+      description: row.note || directionLabel('PAYMENT', row.direction, partnerName),
+      amount: row.amount, direction: row.direction,
+      signedAmount: row.amount * EFFECT[row.direction],
+      voidedAt: row.voidedAt, createdAt: row.createdAt,
     })),
   ];
 
@@ -128,72 +146,74 @@ export async function getAccountSettings(client = prisma) {
   return settings;
 }
 
-export async function getBalance({ from, to } = {}, client = prisma) {
-  const [entries, settings] = await Promise.all([
-    fetchLedgerEntries({ from, to, client }),
-    getAccountSettings(client),
-  ]);
-  return computeBalance(entries, settings.openingBalance);
+export async function getBalance({ partnerId, from, to } = {}, client = prisma) {
+  const partner = await client.partner.findUnique({ where: { id: partnerId } });
+  if (!partner) throw new AppError('NOT_FOUND', 404);
+  const entries = await fetchLedgerEntries({ partnerId, from, to, client });
+  return computeBalance(entries, partner.openingBalance);
 }
 
-/** Reject writes inside an actively closed period. */
-export async function assertNotClosed(date, client = prisma) {
+/** Reject writes inside an actively closed period for this partner only. */
+export async function assertNotClosed(date, client = prisma, partnerId) {
   const closed = await client.periodClosing.findFirst({
-    where: { status: 'ACTIVE', periodStart: { lte: date }, periodEnd: { gte: date } },
+    where: {
+      ...(partnerId ? { partnerId } : {}),
+      status: 'ACTIVE',
+      periodStart: { lte: date },
+      periodEnd: { gte: date },
+    },
     select: { id: true, periodStart: true, periodEnd: true },
   });
   if (closed) throw new AppError('PERIOD_CLOSED', 409);
   return closed;
 }
 
-export async function latestActiveClosing(client = prisma) {
+export async function latestActiveClosing(client = prisma, partnerId) {
   return client.periodClosing.findFirst({
-    where: { status: 'ACTIVE' },
+    where: { ...(partnerId ? { partnerId } : {}), status: 'ACTIVE' },
     orderBy: { periodEnd: 'desc' },
   });
 }
 
-/**
- * Compute a settlement preview for any custom [start, end] period.
- * Snapshot values are computed from the ledger, never from the client.
- */
-export async function buildPeriodPreview(startValue, endValue, { start, end, client = prisma } = {}) {
+/** Compute a settlement preview for any custom [start, end] period of one partner. */
+export async function buildPeriodPreview(startValue, endValue, {
+  start, end, client = prisma, partnerId, partnerName, openingBalance = 0n,
+} = {}) {
   const periodStart = start || parseDate(startValue, 'startDate');
   const periodEnd = end || parseDate(endValue, 'endDate');
-  const [allEntries, settings, previousClosing] = await Promise.all([
-    fetchLedgerEntries({ client }),
-    getAccountSettings(client),
+  const [allEntries, previousClosing] = await Promise.all([
+    fetchLedgerEntries({ partnerId, partnerName, client }),
     client.periodClosing.findFirst({
-      where: { status: 'ACTIVE', periodEnd: { lt: periodStart } },
+      where: { ...(partnerId ? { partnerId } : {}), status: 'ACTIVE', periodEnd: { lt: periodStart } },
       orderBy: { periodEnd: 'desc' },
     }),
   ]);
 
-  const openingBalance = computeBalance(
+  const opening = computeBalance(
     allEntries.filter((entry) => entry.date < toISODate(periodStart)),
-    settings.openingBalance,
+    openingBalance,
   );
   const periodEntries = allEntries.filter(
     (entry) => entry.date >= toISODate(periodStart) && entry.date <= toISODate(periodEnd),
   );
   const totals = summarize(periodEntries);
   const signedSum = sumAmounts(periodEntries.map((entry) => entry.signedAmount));
-  const closingBalance = openingBalance + signedSum;
 
   return {
+    partnerId,
     periodStart,
     periodEnd,
     startDate: toISODate(periodStart),
     endDate: toISODate(periodEnd),
-    openingBalance,
+    openingBalance: opening,
     previousClosingId: previousClosing?.id || null,
     previousClosingBalance: previousClosing?.closingBalance ?? null,
     totalLent: totals.totalLent,
     totalDelivered: totals.totalDelivered,
     totalReceived: totals.totalReceived,
     totalPaidOut: totals.totalPaidOut,
-    netBeforeSettlement: openingBalance + signedSum,
-    closingBalance,
+    netBeforeSettlement: opening + signedSum,
+    closingBalance: opening + signedSum,
     transactionCount: totals.count,
     entries: periodEntries.map(serializeEntry),
   };
@@ -202,6 +222,7 @@ export async function buildPeriodPreview(startValue, endValue, { start, end, cli
 /** Convert a preview (bigints) into a JSON-safe snapshot stored on a closing. */
 export function previewToSnapshot(preview) {
   return {
+    partnerId: preview.partnerId,
     openingBalance: money(preview.openingBalance),
     totalLent: money(preview.totalLent),
     totalDelivered: money(preview.totalDelivered),

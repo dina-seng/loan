@@ -3,12 +3,13 @@ import { PrismaClient } from '@prisma/client';
 import { hashPassword } from '../src/auth.js';
 
 const prisma = new PrismaClient();
+const DEFAULT_PARTNER_ID = '00000000-0000-4000-8000-000000000001';
 
 async function main() {
   const username = process.env.SEED_USERNAME || 'dad';
   const password = process.env.SEED_PASSWORD || 'change-me-123';
 
-  await prisma.accountSettings.upsert({
+  const settings = await prisma.accountSettings.upsert({
     where: { id: 'main' },
     update: {},
     create: {
@@ -18,6 +19,18 @@ async function main() {
       partnerName: 'អ៊ូដុំ',
       openingBalance: 0n,
       openingDate: new Date('2000-01-01T00:00:00.000Z'),
+    },
+  });
+
+  // The fallback partner from the migration. Existing records already point here.
+  await prisma.partner.upsert({
+    where: { id: DEFAULT_PARTNER_ID },
+    update: {},
+    create: {
+      id: DEFAULT_PARTNER_ID,
+      name: 'អ៊ូដុំ',
+      note: 'ដៃគូដើម',
+      openingBalance: settings.openingBalance,
     },
   });
 
@@ -36,20 +49,7 @@ async function main() {
     console.log(`Owner account "${username}" already exists; no changes made.`);
   }
 
-  // A tiny product catalog is helpful for a fresh local install.
-  // No financial transactions are ever seeded.
-  if (process.env.NODE_ENV !== 'production') {
-    const sample = [
-      { name: 'ស៊ីម៉ង់', unit: 'កាប់', unitPrice: 0n },
-      { name: 'ដែក', unit: 'គីឡូក្រាម', unitPrice: 0n },
-      { name: 'ឈើ', unit: 'បន្ទះ', unitPrice: 0n },
-    ];
-    for (const item of sample) {
-      const found = await prisma.product.findFirst({ where: { name: item.name } });
-      if (!found) await prisma.product.create({ data: item });
-    }
-  }
-
+  // No fake financial records or product catalog are ever seeded.
   console.log('Seed complete.');
 }
 

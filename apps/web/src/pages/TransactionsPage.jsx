@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, newIdempotencyKey } from '../api.js';
 import { labels, errorMessage } from '../i18n/labels.js';
 import { useToast } from '../components/Toast.jsx';
+import { usePartner } from '../partners.jsx';
 import { ConfirmDialog, Field, InlineError, PageHeader } from '../components/Ui.jsx';
 import EntryModal from '../components/EntryModal.jsx';
 import TransactionList from '../components/TransactionList.jsx';
@@ -18,6 +19,7 @@ export default function TransactionsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const { show } = useToast();
+  const { partner } = usePartner();
 
   const load = useCallback(async () => {
     const params = new URLSearchParams({ page: String(page), pageSize: '20' });
@@ -29,7 +31,7 @@ export default function TransactionsPage() {
     } catch (err) {
       setError(errorMessage(err));
     }
-  }, [filters, page]);
+  }, [filters, page, partner?.id]);
 
   useEffect(() => { load(); }, [load]);
 

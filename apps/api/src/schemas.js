@@ -22,19 +22,19 @@ export const lendingCreateSchema = z.object({
 });
 
 export const deliveryCreateSchema = z.object({
-  reference,
+  reference: reference.optional().nullable(),
   deliveryDate: dateString,
   note,
   items: z.array(z.object({
-    productId: z.string().uuid(),
     quantity: z.string().regex(/^\d+(\.\d{1,3})?$/, 'បរិមាណមិនត្រឹមត្រូវ'),
     unitPrice: amountString,
-  })).min(1, 'ត្រូវបញ្ចូលយ៉ាងតិចមួយទំនិញ').max(100),
+    note: z.string().trim().max(300).optional().nullable().transform((v) => v || null),
+  })).min(1, 'ត្រូវបញ្ចូលយ៉ាងតិចមួយជួរ').max(100),
 });
 
 export const paymentCreateSchema = z.object({
   paymentDate: dateString,
-  direction: z.enum(['OUDOM_TO_DAD', 'DAD_TO_OUDOM']),
+  direction: z.enum(['PARTNER_TO_DAD', 'DAD_TO_PARTNER']),
   amount: amountString,
   method: z.string().trim().min(1).max(50).default('cash'),
   note,
@@ -45,21 +45,21 @@ export const paymentCreateSchema = z.object({
 export const settlementCreateSchema = z.object({
   paymentDate: dateString,
   amount: amountString,
-  direction: z.enum(['OUDOM_TO_DAD', 'DAD_TO_OUDOM']).optional(),
+  direction: z.enum(['PARTNER_TO_DAD', 'DAD_TO_PARTNER']).optional(),
   method: z.string().trim().min(1).max(50).default('cash'),
   note,
   periodClosingId: z.string().uuid().optional().nullable(),
   reference: reference.optional().nullable(),
 });
 
-export const productCreateSchema = z.object({
+export const partnerCreateSchema = z.object({
   name: z.string().trim().min(1).max(120),
-  unit: z.string().trim().min(1).max(40),
-  description: z.string().trim().max(500).optional().nullable(),
-  unitPrice: amountString.optional(),
+  phone: z.string().trim().max(40).optional().nullable(),
+  note: z.string().trim().max(500).optional().nullable(),
+  openingBalance: amountString.optional(),
 });
 
-export const productUpdateSchema = productCreateSchema.partial().extend({
+export const partnerUpdateSchema = partnerCreateSchema.partial().extend({
   isActive: z.boolean().optional(),
 });
 

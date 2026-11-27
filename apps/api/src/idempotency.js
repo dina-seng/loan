@@ -13,7 +13,7 @@ export function idempotent(scope) {
     if (key.length < 8 || key.length > 200) {
       throw badRequest('IDEMPOTENCY_KEY_REQUIRED');
     }
-    const scopeKey = `${scope}:${req.route?.path || req.path}`;
+    const scopeKey = `${req.partnerId || 'global'}:${scope}:${req.route?.path || req.path}`;
     let record;
     try {
       record = await prisma.idempotencyKey.create({

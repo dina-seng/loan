@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import { authRequired, requireOwner } from '../auth.js';
 import { prisma } from '../db.js';
 import { AppError, asyncHandler, notFound, ok } from '../errors.js';
 import { addDays, assertRange, toISODate } from '../dates.js';
@@ -11,18 +10,29 @@ import { idempotent } from '../idempotency.js';
 import { audit, jsonSafe } from '../audit.js';
 
 export const periodClosingsRouter = Router();
-periodClosingsRouter.use(authRequired);
+
+function parse(value) {
+  return new Date(`${value}T00:00:00.000Z`);
+}
 
 periodClosingsRouter.get('/', asyncHandler(async (req, res) => {
-  const rows = await prisma.periodClosing.findMany({ orderBy: { periodEnd: 'desc' } });
+  const rows = await prisma.periodClosing.findMany({
+    where: { partnerId: req.partnerId }, orderBy: { periodEnd: 'desc' },
+  });
   ok(res, rows.map(closingJson));
 }));
 
 periodClosingsRouter.get('/preview', validate(periodQuerySchema, 'query'), asyncHandler(async (req, res) => {
   const { startDate, endDate } = req.valid;
   assertRange(startDate, endDate);
-  const preview = await buildPeriodPreview(startDate, endDate);
-  const last = await prisma.periodClosing.findFirst({ where: { status: 'ACTIVE' }, orderBy: { periodEnd: 'desc' } });
+  const preview = await buildPeriodPreview(startDate, endDate, {
+    partnerId: req.partnerId,
+    partnerName: req.partner.name,
+    openingBalance: req.partner.openingBalance,
+  });
+  const last = await prisma.periodClosing.findFirst({
+    where: { partnerId: req.partnerId, status: 'ACTIVE' }, orderBy: { periodEnd: 'desc' },
+  });
   const contiguous = !last || toISODate(addDays(last.periodEnd, 1)) === preview.startDate;
   ok(res, {
     ...serializePreview(preview),
@@ -33,27 +43,35 @@ periodClosingsRouter.get('/preview', validate(periodQuerySchema, 'query'), async
 }));
 
 periodClosingsRouter.get('/:id', asyncHandler(async (req, res) => {
-  const row = await prisma.periodClosing.findUnique({ where: { id: req.params.id } });
+  const row = await prisma.periodClosing.findFirst({
+    where: { id: req.params.id, partnerId: req.partnerId },
+  });
   if (!row) throw notFound();
-  const entries = await fetchLedgerEntries({ from: toISODate(row.periodStart), to: toISODate(row.periodEnd) });
+  const entries = await fetchLedgerEntries({
+    partnerId: req.partnerId, partnerName: req.partner.name,
+    from: toISODate(row.periodStart), to: toISODate(row.periodEnd),
+  });
   ok(res, { ...closingJson(row), entries: entries.map(serializeEntry) });
 }));
 
 /** Printable statement data. The stored snapshot is authoritative for history. */
 periodClosingsRouter.get('/:id/statement', asyncHandler(async (req, res) => {
-  const row = await prisma.periodClosing.findUnique({
-    where: { id: req.params.id },
+  const row = await prisma.periodClosing.findFirst({
+    where: { id: req.params.id, partnerId: req.partnerId },
     include: { settlements: true },
   });
   if (!row) throw notFound();
   const [settings, entries] = await Promise.all([
     getAccountSettings(),
-    fetchLedgerEntries({ from: toISODate(row.periodStart), to: toISODate(row.periodEnd) }),
+    fetchLedgerEntries({
+      partnerId: req.partnerId, partnerName: req.partner.name,
+      from: toISODate(row.periodStart), to: toISODate(row.periodEnd),
+    }),
   ]);
   ok(res, {
     businessName: settings.businessName,
     ownerName: settings.ownerName,
-    partnerName: settings.partnerName,
+    partnerName: req.partner.name, // current name; renaming never changes old numbers
     closing: closingJson(row),
     entries: entries.map(serializeEntry),
     settlements: row.settlements.map((s) => ({
@@ -62,13 +80,13 @@ periodClosingsRouter.get('/:id/statement', asyncHandler(async (req, res) => {
   });
 }));
 
-periodClosingsRouter.post('/', requireOwner, validate(closingCreateSchema), idempotent('period-closing'), asyncHandler(async (req, res) => {
+periodClosingsRouter.post('/', validate(closingCreateSchema), idempotent('period-closing'), asyncHandler(async (req, res) => {
   const { startDate, endDate, note } = req.valid;
   assertRange(startDate, endDate);
 
   const row = await prisma.$transaction(async (tx) => {
     const last = await tx.periodClosing.findFirst({
-      where: { status: 'ACTIVE' }, orderBy: { periodEnd: 'desc' },
+      where: { partnerId: req.partnerId, status: 'ACTIVE' }, orderBy: { periodEnd: 'desc' },
     });
     if (last && toISODate(addDays(last.periodEnd, 1)) !== startDate) {
       throw new AppError('PERIOD_OVERLAP', 409, {
@@ -78,6 +96,7 @@ periodClosingsRouter.post('/', requireOwner, validate(closingCreateSchema), idem
     }
     const overlapping = await tx.periodClosing.findFirst({
       where: {
+        partnerId: req.partnerId,
         status: 'ACTIVE',
         periodStart: { lte: parse(endDate) },
         periodEnd: { gte: parse(startDate) },
@@ -85,11 +104,17 @@ periodClosingsRouter.post('/', requireOwner, validate(closingCreateSchema), idem
     });
     if (overlapping) throw new AppError('PERIOD_OVERLAP', 409);
 
-    const preview = await buildPeriodPreview(startDate, endDate, { client: tx });
+    const preview = await buildPeriodPreview(startDate, endDate, {
+      client: tx,
+      partnerId: req.partnerId,
+      partnerName: req.partner.name,
+      openingBalance: req.partner.openingBalance,
+    });
     const snapshot = previewToSnapshot(preview);
     const created = await tx.periodClosing.create({
       data: {
-        closingKey: `${preview.startDate}_${preview.endDate}`,
+        partnerId: req.partnerId,
+        closingKey: `${req.partnerId}_${preview.startDate}_${preview.endDate}`,
         periodStart: preview.periodStart,
         periodEnd: preview.periodEnd,
         closedById: req.user.id,
@@ -106,7 +131,7 @@ periodClosingsRouter.post('/', requireOwner, validate(closingCreateSchema), idem
     });
     await audit(req.user.id, 'PERIOD_CLOSE', 'PeriodClosing', created.id, {
       after: jsonSafe(closingJson(created)),
-      metadata: { periodStart: preview.startDate, periodEnd: preview.endDate },
+      metadata: { partnerId: req.partnerId, periodStart: preview.startDate, periodEnd: preview.endDate },
     }, tx);
     return created;
   });
@@ -114,14 +139,16 @@ periodClosingsRouter.post('/', requireOwner, validate(closingCreateSchema), idem
   ok(res, closingJson(row), undefined, 201);
 }));
 
-periodClosingsRouter.post('/:id/reopen', requireOwner, validate(reopenSchema), idempotent('period-reopen'), asyncHandler(async (req, res) => {
-  const before = await prisma.periodClosing.findUnique({ where: { id: req.params.id } });
+periodClosingsRouter.post('/:id/reopen', validate(reopenSchema), idempotent('period-reopen'), asyncHandler(async (req, res) => {
+  const before = await prisma.periodClosing.findFirst({
+    where: { id: req.params.id, partnerId: req.partnerId },
+  });
   if (!before) throw notFound();
   if (before.status === 'REOPENED') throw new AppError('CONFLICT', 409, undefined, 'ខួបនេះត្រូវបានបើកឡើងវិញរួចហើយ');
 
   const updated = await prisma.$transaction(async (tx) => {
     const later = await tx.periodClosing.findFirst({
-      where: { status: 'ACTIVE', periodStart: { gt: before.periodStart } },
+      where: { partnerId: req.partnerId, status: 'ACTIVE', periodStart: { gt: before.periodStart } },
       orderBy: { periodStart: 'asc' },
     });
     if (later) throw new AppError('PERIOD_HAS_LATER_CLOSING', 409);
@@ -138,12 +165,9 @@ periodClosingsRouter.post('/:id/reopen', requireOwner, validate(reopenSchema), i
   ok(res, closingJson(updated));
 }));
 
-function parse(value) {
-  return new Date(`${value}T00:00:00.000Z`);
-}
-
 function serializePreview(preview) {
   return {
+    partnerId: preview.partnerId,
     startDate: preview.startDate,
     endDate: preview.endDate,
     openingBalance: money(preview.openingBalance),

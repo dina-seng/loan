@@ -77,11 +77,6 @@ export const authRequired = asyncHandler(async (req, _res, next) => {
   next();
 });
 
-export function requireOwner(req, _res, next) {
-  if (req.user?.role !== 'OWNER') return next(new AppError('FORBIDDEN', 403));
-  next();
-}
-
 /** Simple in-memory per-IP + username throttling for login attempts. */
 const attempts = new Map();
 
