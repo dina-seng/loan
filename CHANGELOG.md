@@ -40,6 +40,7 @@ through the forward-only `20261128000000_spec_v4_rich_ledger` migration; nothing
 - `/payments/:id` and `/settlements/:id` accept either the entry id or the returned settlement id.
 - Partner switcher “add” used a string sentinel as a partner object, so the add form never opened.
 - Modals rendered in the sticky header were covered by the bottom nav on mobile; the header now sits above it.
+- Delivery input no longer asks for a free-text product name or reference number; products are selected from the catalog.
 - The v4 migration tolerates the `Partner_name_lower_key` index left by an older migration.
 - Khmer numerals (`០-៩`) are parsed before money/quantity validation.
 - `includeVoided=false` query strings no longer become truthy.

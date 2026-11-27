@@ -11,7 +11,6 @@ export default function DeliveryModal({ open, onClose, firstOpenDate, onSaved })
   const [products, setProducts] = useState([]);
   const [date, setDate] = useState(todayISO());
   const [note, setNote] = useState('');
-  const [reference, setReference] = useState('');
   const [lines, setLines] = useState([emptyLine()]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -22,7 +21,6 @@ export default function DeliveryModal({ open, onClose, firstOpenDate, onSaved })
     if (!open) return;
     setDate(firstOpenDate || todayISO());
     setNote('');
-    setReference('');
     setLines([emptyLine()]);
     setError('');
     setWarning(firstOpenDate ? labels.closedPeriodDefault : '');
@@ -48,8 +46,8 @@ export default function DeliveryModal({ open, onClose, firstOpenDate, onSaved })
     event.preventDefault();
     setError('');
     if (!date) return setError(labels.dateRequired);
-    if (!lines.length || lines.every((line) => !line.productName)) return setError(labels.linesRequired);
-    if (lines.some((line) => !line.productName)) return setError(labels.productRequired);
+    if (!lines.length) return setError(labels.linesRequired);
+    if (lines.some((line) => !line.productId)) return setError(labels.productRequired);
     if (lines.some((line) => !line.quantity)) return setError(labels.quantityRequired);
 
     setBusy(true);
@@ -60,10 +58,8 @@ export default function DeliveryModal({ open, onClose, firstOpenDate, onSaved })
           id: idRef.current,
           deliveryDate: date,
           note: note || null,
-          reference: reference || null,
           items: lines.map((line) => ({
-            productId: line.productId || null,
-            productName: line.productName || null,
+            productId: line.productId,
             unit: line.unit || null,
             quantity: normalizeQuantityInput(line.quantity),
             unitPrice: line.unitPrice ? normalizeAmountInput(line.unitPrice) : null,
@@ -110,9 +106,6 @@ export default function DeliveryModal({ open, onClose, firstOpenDate, onSaved })
                     ))}
                   </select>
                 </Field>
-                <Field label={labels.productName}>
-                  <input className="input" value={line.productName} maxLength={120} onChange={(event) => updateLine(index, { productName: event.target.value })} />
-                </Field>
                 <Field label={labels.quantity}>
                   <input className="input" inputMode="decimal" value={line.quantity} placeholder="0" onChange={(event) => updateLine(index, { quantity: normalizeQuantityInput(event.target.value) })} />
                 </Field>
@@ -130,9 +123,6 @@ export default function DeliveryModal({ open, onClose, firstOpenDate, onSaved })
           <button type="button" className="btn-secondary w-full" onClick={() => setLines((prev) => [...prev, emptyLine()])}>{labels.addLine}</button>
         </div>
 
-        <Field label={labels.reference}>
-          <input className="input" value={reference} maxLength={80} onChange={(event) => setReference(event.target.value)} />
-        </Field>
         <Field label={labels.note}>
           <textarea className="input min-h-[70px] py-2" value={note} maxLength={500} onChange={(event) => setNote(event.target.value)} />
         </Field>
