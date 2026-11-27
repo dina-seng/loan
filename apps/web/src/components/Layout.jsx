@@ -1,15 +1,17 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../auth.jsx';
 import { usePartner } from '../partners.jsx';
-import { labels } from '../i18n/labels.js';
+import { labels } from '../strings.km.js';
 import { formatDate, todayISO } from '../utils/money.js';
 import { LogOutIcon } from './Icons.jsx';
 import { ClockIcon, HomeIcon, UserIcon } from './NavIcons.jsx';
+import { SettingsIcon } from './Icons.jsx';
 import PartnerSwitcher from './PartnerSwitcher.jsx';
 
 const nav = [
   { to: '/', label: labels.dashboard, Icon: HomeIcon, end: true },
   { to: '/history', label: labels.history, Icon: ClockIcon },
+  { to: '/tools', label: labels.tools, Icon: SettingsIcon },
 ];
 
 const linkClass = ({ isActive }) => `flex min-h-[44px] items-center gap-3 rounded-xl px-3 text-sm font-bold transition-colors ${isActive ? 'bg-brand-50 text-brand-800' : 'text-slate-600 hover:bg-slate-100'}`;
@@ -65,7 +67,7 @@ export default function Layout() {
       </div>
 
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
-        <div className="mx-auto grid max-w-lg grid-cols-2">
+        <div className="mx-auto grid max-w-lg grid-cols-3">
           {nav.map(({ to, label, Icon, end }) => (
             <NavLink key={to} to={to} end={end} className={({ isActive }) => `flex min-h-[60px] flex-col items-center justify-center gap-0.5 px-0.5 text-[10px] font-bold leading-tight ${isActive ? 'text-brand-700' : 'text-slate-500'}`}>
               <Icon className="h-[22px] w-[22px]" />

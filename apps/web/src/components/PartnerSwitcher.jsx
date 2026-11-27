@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { labels } from '../i18n/labels.js';
+import { labels } from '../strings.km.js';
 import { usePartner } from '../partners.jsx';
 import { useToast } from './Toast.jsx';
 import { Field, InlineError, Modal } from './Ui.jsx';
@@ -24,7 +24,7 @@ export default function PartnerSwitcher({ compact = false }) {
 
   const save = async (event) => {
     event.preventDefault();
-    if (!form.name.trim()) return setError('សូមបញ្ចូលឈ្មោះដៃគូ');
+    if (!form.name.trim()) return setError(labels.partnerRequired);
     setBusy(true);
     try {
       const body = { name: form.name };

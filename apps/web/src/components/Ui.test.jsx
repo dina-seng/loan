@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { BalanceCard } from './Ui.jsx';
-import { labels } from '../i18n/labels.js';
+import { labels } from '../strings.km.js';
 
 describe('BalanceCard', () => {
   it('shows a positive balance as a sentence, not a bare number', () => {

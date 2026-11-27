@@ -168,4 +168,32 @@ describe('entries API', () => {
     expect(renamed.status).toBe(200);
     expect(renamed.body.data.name).toBe('ដៃគូបី');
   });
+
+  it('rejects wrong passwords and requests without a session', async () => {
+    const wrong = await request(app).post('/api/v1/auth/login')
+      .send({ username: 'dad', password: 'not-the-password' });
+    expect(wrong.status).toBe(401);
+    expect(wrong.body.error.code).toBe('INVALID_CREDENTIALS');
+
+    const missing = await request(app).post('/api/v1/auth/login').send({ username: 'dad' });
+    expect(missing.status).toBe(400);
+
+    const anonymous = await request(app).post('/api/v1/partners').send({ name: 'គ្មានសិទ្ធិ' });
+    expect(anonymous.status).toBe(401);
+    expect(await prisma.partner.count({ where: { name: 'គ្មានសិទ្ធិ' } })).toBe(0);
+  });
+
+  it('stores plain dates without shifting at midnight or across a month boundary', async () => {
+    const endOfMonth = await addEntry({ type: 'LEND', date: '2026-11-30', amount: '111' });
+    const startOfMonth = await addEntry({ type: 'LEND', date: '2026-12-01', amount: '222' });
+    expect(endOfMonth.body.data.date).toBe('2026-11-30');
+    expect(startOfMonth.body.data.date).toBe('2026-12-01');
+
+    const stored = await prisma.entry.findUnique({ where: { id: startOfMonth.body.data.id } });
+    expect(stored.entryDate.toISOString().slice(0, 10)).toBe('2026-12-01');
+
+    const novembers = (await get('/api/v1/entries?from=2026-11-01&to=2026-11-30')).body.data;
+    expect(novembers.map((row) => row.date)).toEqual(['2026-11-30']);
+    expect(novembers[0].amount).toBe('111');
+  });
 });

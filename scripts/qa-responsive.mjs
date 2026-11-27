@@ -28,7 +28,7 @@ for (const width of widths) {
     partnerButton: document.querySelector('header button[aria-label="ជ្រើសរើសដៃគូ"]')?.textContent?.trim() || '',
   }));
   const overflow = metrics.scrollWidth > metrics.clientWidth;
-  if (overflow || metrics.navItems !== 2) failed = true;
+  if (overflow || metrics.navItems !== 3) failed = true;
   console.log(`${width}px | overflow=${overflow} (${metrics.scrollWidth}/${metrics.clientWidth}) | balance=${metrics.balance} | nav=${metrics.navItems} | partner=${metrics.partnerButton}`);
   await page.close();
 }

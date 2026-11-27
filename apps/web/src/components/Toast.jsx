@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { CheckCircleIcon, XIcon } from './Icons.jsx';
-import { labels } from '../i18n/labels.js';
+import { labels } from '../strings.km.js';
 
 const ToastContext = createContext(null);
 

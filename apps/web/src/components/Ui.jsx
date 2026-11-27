@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
-import { labels } from '../i18n/labels.js';
-import { balanceTone, formatMoney, formatPositive } from '../utils/money.js';
+import { RIER, labels } from '../strings.km.js';
+import { balanceTone, formatMoney, formatPositive, normalizeAmountInput } from '../utils/money.js';
 import { AlertCircleIcon, XIcon } from './Icons.jsx';
 
 export function PageHeader({ title, subtitle, action }) {
@@ -75,11 +75,11 @@ export function AmountField({ label, value, onChange, placeholder = '0', hint })
   return (
     <Field label={label} hint={hint}>
       <div className="relative">
-        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">៛</span>
+        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">{RIER}</span>
         <input
           className="input amount pl-8 text-right" inputMode="numeric" autoComplete="off"
           value={value} placeholder={placeholder}
-          onChange={(event) => onChange(event.target.value.replace(/[^\d]/g, ''))}
+          onChange={(event) => onChange(normalizeAmountInput(event.target.value))}
         />
       </div>
     </Field>

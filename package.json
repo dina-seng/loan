@@ -15,6 +15,7 @@
     "prisma:generate": "dotenv -e .env -- prisma generate --schema=apps/api/prisma/schema.prisma",
     "prisma:migrate": "dotenv -e .env -- prisma migrate dev --schema=apps/api/prisma/schema.prisma",
     "prisma:deploy": "dotenv -e .env -- prisma migrate deploy --schema=apps/api/prisma/schema.prisma",
+    "prisma:migrate:test": "node scripts/migrate-test.mjs",
     "prisma:seed": "dotenv -e .env -- node apps/api/prisma/seed.js",
     "build": "npm run prisma:generate && npm run build -w apps/web",
     "start": "npm run start -w apps/api",
