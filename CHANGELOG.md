@@ -38,6 +38,8 @@ through the forward-only `20261128000000_spec_v4_rich_ledger` migration; nothing
 - `getFirstOpenDate()` had reversed parameters and broke every dashboard request.
 - Delivery quantities are serialized with three decimal places instead of losing trailing zeroes.
 - `/payments/:id` and `/settlements/:id` accept either the entry id or the returned settlement id.
+- Partner switcher “add” used a string sentinel as a partner object, so the add form never opened.
+- Modals rendered in the sticky header were covered by the bottom nav on mobile; the header now sits above it.
 - The v4 migration tolerates the `Partner_name_lower_key` index left by an older migration.
 - Khmer numerals (`០-៩`) are parsed before money/quantity validation.
 - `includeVoided=false` query strings no longer become truthy.
