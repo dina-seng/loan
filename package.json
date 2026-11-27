@@ -1,28 +1,40 @@
 {
-  "name": "lending-management-system",
+  "name": "business-ledger",
+  "version": "2.0.0",
   "private": true,
-  "version": "1.0.0",
   "type": "module",
+  "description": "Mobile-first, Khmer-first business ledger for Dad and Oudom",
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "test": "vitest run",
-    "test:watch": "vitest"
-  },
-  "dependencies": {
-    "@vercel/analytics": "^2.0.1",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "dev": "concurrently -k -n api,web -c blue,green \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm run dev -w apps/api",
+    "dev:web": "npm run dev -w apps/web",
+    "prisma:generate": "dotenv -e .env -- prisma generate --schema=apps/api/prisma/schema.prisma",
+    "prisma:migrate": "dotenv -e .env -- prisma migrate dev --schema=apps/api/prisma/schema.prisma",
+    "prisma:deploy": "dotenv -e .env -- prisma migrate deploy --schema=apps/api/prisma/schema.prisma",
+    "prisma:seed": "dotenv -e .env -- node apps/api/prisma/seed.js",
+    "build": "npm run prisma:generate && npm run build -w apps/web",
+    "start": "npm run start -w apps/api",
+    "test": "npm run test -w apps/api && npm run test -w apps/web",
+    "test:api": "npm run test -w apps/api",
+    "test:web": "npm run test -w apps/web",
+    "lint": "eslint .",
+    "qa:responsive": "node scripts/qa-responsive.mjs",
+    "qa:pages": "node scripts/qa-pages.mjs"
   },
   "devDependencies": {
-    "@types/react": "^19.1.4",
-    "@types/react-dom": "^19.1.5",
-    "@vitejs/plugin-react": "^4.5.2",
-    "autoprefixer": "^10.4.21",
-    "postcss": "^8.5.4",
-    "tailwindcss": "^3.4.17",
-    "vite": "^6.3.5",
-    "vitest": "^3.2.1"
+    "@eslint/js": "^9.39.0",
+    "concurrently": "^9.2.1",
+    "dotenv-cli": "^8.0.0",
+    "eslint": "^9.39.0",
+    "globals": "^16.5.0",
+    "playwright-core": "^1.65.1",
+    "prisma": "^6.19.3"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
