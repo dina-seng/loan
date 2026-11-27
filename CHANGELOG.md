@@ -42,6 +42,7 @@ through the forward-only `20261128000000_spec_v4_rich_ledger` migration; nothing
 - Modals rendered in the sticky header were covered by the bottom nav on mobile; the header now sits above it.
 - Delivery input no longer asks for a free-text product name or reference number; products are selected from the catalog.
 - Added a quick-add product panel inside each delivery line so a new catalog item can be created without leaving the form.
+- Dashboard now shows only lend/product totals; payment-in/payment-out cards were removed to avoid confusing users.
 - The v4 migration tolerates the `Partner_name_lower_key` index left by an older migration.
 - Khmer numerals (`០-៩`) are parsed before money/quantity validation.
 - `includeVoided=false` query strings no longer become truthy.
