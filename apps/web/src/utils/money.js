@@ -8,20 +8,28 @@ export function normalizeAmountInput(value) {
     .replace(/[^\d]/g, '');
 }
 
+/** Exact grouped digits; never goes through Number, so huge BigInt amounts stay correct. */
 export function formatNumber(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return '0';
-  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(number);
+  let digits = String(value ?? '').trim();
+  if (!/^-?\d+$/.test(digits)) {
+    const numeric = Number(digits);
+    if (!Number.isFinite(numeric)) return '0';
+    digits = String(Math.trunc(numeric));
+  }
+  const negative = digits.startsWith('-');
+  const body = negative ? digits.slice(1) : digits;
+  return `${negative ? '-' : ''}${body.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
 }
 
 export function formatMoney(value) {
   return `៛${formatNumber(value)}`;
 }
 
-export function formatQuantity(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return '0';
-  return new Intl.NumberFormat('km-KH', { maximumFractionDigits: 3 }).format(number);
+/** Amount without the riel sign, always positive (the type carries the direction). */
+export function formatPositive(value) {
+  const digits = String(value ?? '').trim();
+  const positive = /^-\d+$/.test(digits) ? digits.slice(1) : digits;
+  return formatMoney(positive);
 }
 
 const khmerMonths = ['មករា', 'កុម្ភៈ', 'មីនា', 'មេសា', 'ឧសភា', 'មិថុនា', 'កក្កដា', 'សីហា', 'កញ្ញា', 'តុលា', 'វិច្ឆិកា', 'ធ្នូ'];
@@ -31,27 +39,48 @@ function toKhmerDigits(value) {
   return String(value).replace(/\d/g, (digit) => khmerNumerals[Number(digit)]);
 }
 
-/** Natural Khmer date, e.g. «២៧ វិច្ឆិកា ២០២៦», independent of browser locale data. */
-export function formatDate(value) {
-  if (!value) return '';
-  const date = new Date(`${String(value).slice(0, 10)}T00:00:00+07:00`);
-  if (Number.isNaN(date.getTime())) return String(value);
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Phnom_Penh', year: 'numeric', month: 'numeric', day: 'numeric',
-  }).formatToParts(date);
-  const get = (type) => parts.find((part) => part.type === type)?.value;
-  const month = khmerMonths[Number(get('month')) - 1] || '';
-  return `${toKhmerDigits(get('day'))} ${month} ${toKhmerDigits(get('year'))}`;
+/**
+ * Plain yyyy-mm-dd strings are used as-is; they are never converted with
+ * toISOString or a timestamp, so the Cambodia date never shifts by a day.
+ */
+function dateParts(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value ?? ''));
+  if (!match) return null;
+  return { year: match[1], month: Number(match[2]), day: match[3] };
 }
 
+/** Natural Khmer date, e.g. «២៧ វិច្ឆិកា ២០២៦». */
+export function formatDate(value) {
+  const parts = dateParts(value);
+  if (!parts) return String(value ?? '');
+  const month = khmerMonths[parts.month - 1] || '';
+  return `${toKhmerDigits(Number(parts.day))} ${month} ${toKhmerDigits(parts.year)}`;
+}
+
+/** Month heading for a yyyy-mm-dd date or a yyyy-mm key, e.g. «វិច្ឆិកា ២០២៦». */
+export function formatMonth(value) {
+  const match = /^(\d{4})-(\d{2})/.exec(String(value ?? ''));
+  if (!match) return String(value ?? '');
+  const month = khmerMonths[Number(match[2]) - 1] || '';
+  return `${month} ${toKhmerDigits(match[1])}`;
+}
+
+/** Month bucket key for a plain yyyy-mm-dd date. */
+export function monthKey(value) {
+  return String(value ?? '').slice(0, 7);
+}
+
+/** Today in Cambodia, built from the calendar parts only (no UTC shift). */
 export function todayISO() {
-  return new Intl.DateTimeFormat('en-CA', {
+  const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Phnom_Penh', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).format(new Date());
+  }).formatToParts(new Date());
+  const get = (type) => parts.find((part) => part.type === type)?.value;
+  return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
 export function balanceTone(direction) {
-  if (direction === 'PARTNER_OWES_DAD') return { text: 'text-amber-900', bg: 'from-amber-50 to-orange-50', border: 'border-amber-300', dot: 'bg-amber-500' };
-  if (direction === 'DAD_OWES_PARTNER') return { text: 'text-sky-900', bg: 'from-sky-50 to-blue-50', border: 'border-sky-300', dot: 'bg-sky-500' };
+  if (direction === 'PARTNER_OWES_US') return { text: 'text-amber-900', bg: 'from-amber-50 to-orange-50', border: 'border-amber-300', dot: 'bg-amber-500' };
+  if (direction === 'WE_OWE_PARTNER') return { text: 'text-sky-900', bg: 'from-sky-50 to-blue-50', border: 'border-sky-300', dot: 'bg-sky-500' };
   return { text: 'text-emerald-900', bg: 'from-emerald-50 to-teal-50', border: 'border-emerald-300', dot: 'bg-emerald-500' };
 }

@@ -26,7 +26,7 @@ function withPartner(body) {
   return id ? { ...body, partnerId: id } : body;
 }
 
-export async function api(path, { method = 'GET', body, idempotencyKey } = {}) {
+export async function api(path, { method = 'GET', body } = {}) {
   let response;
   try {
     response = await fetch(`${BASE}/api/v1${path}`, {
@@ -34,7 +34,6 @@ export async function api(path, { method = 'GET', body, idempotencyKey } = {}) {
       credentials: 'include',
       headers: {
         ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
-        ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
         ...(getSelectedPartnerId() ? { 'X-Partner-Id': getSelectedPartnerId() } : {}),
       },
       ...(body !== undefined ? { body: JSON.stringify(withPartner(body)) } : {}),
@@ -53,4 +52,5 @@ export async function api(path, { method = 'GET', body, idempotencyKey } = {}) {
   return { data: payload.data, meta: payload.meta };
 }
 
-export const newIdempotencyKey = () => (crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`);
+/** Entry ids come from the browser so a retried save cannot create a second row. */
+export const newEntryId = () => (crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`);

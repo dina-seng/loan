@@ -1,25 +1,22 @@
 import { useState } from 'react';
-import { labels, dadOwesPartner, partnerOwesDad } from '../i18n/labels.js';
+import { labels } from '../i18n/labels.js';
 import { usePartner } from '../partners.jsx';
 import { useToast } from './Toast.jsx';
-import { AmountField, Field, InlineError, Modal } from './Ui.jsx';
+import { Field, InlineError, Modal } from './Ui.jsx';
 import { CheckIcon, ChevronDownIcon, PlusIcon } from './Icons.jsx';
-import { formatMoney, normalizeAmountInput } from '../utils/money.js';
+import { formatPositive } from '../utils/money.js';
 
 export default function PartnerSwitcher({ compact = false }) {
   const { partners, partner, selectPartner, createPartner, updatePartner } = usePartner();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name: '', phone: '', note: '', openingBalance: '' });
+  const [form, setForm] = useState({ name: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const { show } = useToast();
 
   const openEditor = (existing) => {
-    setForm(existing ? {
-      name: existing.name, phone: existing.phone || '', note: existing.note || '',
-      openingBalance: String(existing.openingBalance),
-    } : { name: '', phone: '', note: '', openingBalance: '0' });
+    setForm({ name: existing ? existing.name : '' });
     setEditing(existing ? existing.id : 'new');
     setError('');
     setOpen(false);
@@ -30,30 +27,12 @@ export default function PartnerSwitcher({ compact = false }) {
     if (!form.name.trim()) return setError('សូមបញ្ចូលឈ្មោះដៃគូ');
     setBusy(true);
     try {
-      const body = {
-        name: form.name.trim(),
-        phone: form.phone || null,
-        note: form.note || null,
-        ...(editing === 'new' ? { openingBalance: normalizeAmountInput(form.openingBalance) || '0' } : {}),
-      };
+      const body = { name: form.name };
       if (editing === 'new') await createPartner(body);
       else await updatePartner(editing, body);
       show(labels.saved);
       setEditing(null);
       setOpen(true);
-    } catch (err) {
-      setError(err.message || labels.error);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const toggleActive = async () => {
-    if (!partner) return;
-    setBusy(true);
-    try {
-      await updatePartner(partner.id, { isActive: !partner.isActive });
-      show(labels.saved);
     } catch (err) {
       setError(err.message || labels.error);
     } finally {
@@ -88,13 +67,8 @@ export default function PartnerSwitcher({ compact = false }) {
               className={`flex w-full items-center justify-between gap-2 rounded-2xl border p-3 text-left ${item.id === partner?.id ? 'border-brand-500 bg-brand-50' : 'border-slate-200'}`}
             >
               <div className="min-w-0">
-                <p className="flex flex-wrap items-center gap-1.5 truncate text-sm font-extrabold text-slate-900">
-                  <span className="truncate">{item.name}</span>
-                  <span className={`chip ${item.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                    {item.isActive ? labels.active : labels.inactive}
-                  </span>
-                </p>
-                <p className="amount text-xs text-slate-500">{formatMoney(item.balance)} · {item.direction === 'PARTNER_OWES_DAD' ? partnerOwesDad(item.name) : item.direction === 'DAD_OWES_PARTNER' ? dadOwesPartner(item.name) : labels.accountSettled}</p>
+                <p className="truncate text-sm font-extrabold text-slate-900">{item.name}</p>
+                <p className="amount text-xs text-slate-500">{formatPositive(item.balance)} · {item.direction === 'PARTNER_OWES_US' ? labels.theyOweUs : item.direction === 'WE_OWE_PARTNER' ? labels.weOweThem : labels.cleared}</p>
               </div>
               {item.id === partner?.id && <CheckIcon className="h-5 w-5 shrink-0 text-brand-700" />}
             </button>
@@ -102,9 +76,6 @@ export default function PartnerSwitcher({ compact = false }) {
           {partner && (
             <div className="flex gap-2 pt-1">
               <button type="button" className="btn-secondary flex-1" onClick={() => openEditor(partner)}>{labels.editName}</button>
-              <button type="button" className="btn-secondary flex-1" onClick={toggleActive} disabled={busy}>
-                {partner.isActive ? labels.inactive : labels.active}
-              </button>
             </div>
           )}
           <InlineError message={error} />
@@ -119,9 +90,6 @@ export default function PartnerSwitcher({ compact = false }) {
       }>
         <form id="partner-form" onSubmit={save} className="space-y-3">
           <Field label={labels.partnerName}><input className="input" value={form.name} maxLength={120} onChange={(event) => setForm({ ...form, name: event.target.value })} /></Field>
-          <Field label={labels.phone}><input className="input" inputMode="tel" value={form.phone} maxLength={40} onChange={(event) => setForm({ ...form, phone: event.target.value })} /></Field>
-          {editing === 'new' && <AmountField label={labels.openingBalanceFor} value={form.openingBalance} onChange={(value) => setForm({ ...form, openingBalance: value })} hint="សមតុល្យដើមអាចទុក ០" />}
-          <Field label={labels.note}><textarea className="input min-h-[70px] py-2" value={form.note} maxLength={500} onChange={(event) => setForm({ ...form, note: event.target.value })} /></Field>
           <InlineError message={error} />
         </form>
       </Modal>

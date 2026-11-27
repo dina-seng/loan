@@ -14,7 +14,7 @@ export function PartnerProvider({ children }) {
     if (!user) return [];
     setLoading(true);
     try {
-      const { data } = await api('/partners?includeInactive=true');
+      const { data } = await api('/partners');
       setPartners(data);
       return data;
     } catch {
@@ -31,7 +31,7 @@ export function PartnerProvider({ children }) {
     if (!partners.length) return;
     const saved = getSelectedPartnerId();
     const valid = partners.find((p) => p.id === saved);
-    const chosen = valid || partners.find((p) => p.isActive) || partners[0];
+    const chosen = valid || partners[0];
     if (chosen && chosen.id !== selectedId) setSelectedId(chosen.id);
     if (chosen) setSelectedPartnerId(chosen.id);
   }, [partners, selectedId]);

@@ -10,25 +10,18 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum UserRole {
-  OWNER
-  MEMBER
-}
-
-// Direction is relative to Dad: the first value means the partner pays Dad.
-enum PaymentDirection {
-  PARTNER_TO_DAD
-  DAD_TO_PARTNER
-}
-
-enum ClosingStatus {
-  ACTIVE
-  REOPENED
-}
-
-enum SettlementStatus {
-  PARTIAL
-  FULL
+/**
+ * The only kind of ledger record. The sign is derived from the type, never stored:
+ *   LEND        money we gave the partner          → they owe more (+)
+ *   PRODUCT     value of goods we received         → they owe less (−)
+ *   SETTLE_IN   the partner paid us                → they owe less (−)
+ *   SETTLE_OUT  we paid the partner                → they owe more (+)
+ */
+enum EntryType {
+  LEND
+  PRODUCT
+  SETTLE_IN
+  SETTLE_OUT
 }
 
 model User {
@@ -36,240 +29,56 @@ model User {
   username     String    @unique
   passwordHash String
   displayName  String
-  role         UserRole  @default(MEMBER)
   isActive     Boolean   @default(true)
   lastLoginAt  DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  sessions             Session[]
-  lendingTransactions  LendingTransaction[]  @relation("LendingCreatedBy")
-  deliveries           ProductDelivery[]     @relation("DeliveryCreatedBy")
-  payments             Payment[]             @relation("PaymentCreatedBy")
-  settlements          Settlement[]          @relation("SettlementCreatedBy")
-  periodClosings       PeriodClosing[]       @relation("ClosingCreatedBy")
-  auditLogs            AuditLog[]
-  voidedLendings       LendingTransaction[]  @relation("LendingVoidedBy")
-  voidedDeliveries     ProductDelivery[]     @relation("DeliveryVoidedBy")
-  voidedPayments       Payment[]             @relation("PaymentVoidedBy")
-  idempotencyKeys      IdempotencyKey[]
+  sessions Session[]
+  entries  Entry[] @relation("EntryCreatedBy")
 }
 
 model Partner {
-  id            String   @id @default(uuid()) @db.Uuid
-  name          String
-  phone         String?
-  note          String?
-  isActive      Boolean  @default(true)
-  openingBalance BigInt  @default(0)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  lendingTransactions LendingTransaction[]
-  deliveries          ProductDelivery[]
-  payments            Payment[]
-  settlements         Settlement[]
-  periodClosings      PeriodClosing[]
+  entries Entry[]
 
   @@index([name])
-  @@index([isActive])
 }
 
-model AccountSettings {
-  id            String   @id @default("main")
-  businessName  String   @default("Business Ledger")
-  ownerName     String   @default("ប៉ា")
-  partnerName   String   @default("អ៊ូដុំ")
-  openingBalance BigInt  @default(0)
-  openingDate   DateTime @db.Date
-  updatedAt     DateTime @updatedAt
+model Entry {
+  id          String    @id @default(uuid()) @db.Uuid
+  partnerId   String    @db.Uuid
+  type        EntryType
+  entryDate   DateTime  @db.Date
+  amount      BigInt
+  note        String?
+  voidedAt    DateTime?
+  createdById String    @db.Uuid
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  partner   Partner @relation(fields: [partnerId], references: [id])
+  createdBy User    @relation("EntryCreatedBy", fields: [createdById], references: [id])
+
+  @@index([partnerId, entryDate])
+  @@index([voidedAt])
+  @@index([type])
 }
 
 model Session {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @db.Uuid
-  tokenHash String   @unique
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique
   expiresAt DateTime
   revokedAt DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([expiresAt])
-}
-
-model IdempotencyKey {
-  id         String   @id @default(uuid()) @db.Uuid
-  userId     String   @db.Uuid
-  key        String
-  scope      String
-  result     Json
-  createdAt  DateTime @default(now())
-  expiresAt  DateTime
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, key, scope])
-  @@index([expiresAt])
-}
-
-model LendingTransaction {
-  id           String    @id @default(uuid()) @db.Uuid
-  reference    String?   @unique
-  partnerId    String    @db.Uuid
-  transactionDate DateTime @db.Date
-  amount       BigInt
-  note         String?
-  createdById  String    @db.Uuid
-  voidedAt     DateTime?
-  voidedById   String?   @db.Uuid
-  voidReason   String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-
-  partner   Partner @relation(fields: [partnerId], references: [id])
-  createdBy User    @relation("LendingCreatedBy", fields: [createdById], references: [id])
-  voidedBy  User?   @relation("LendingVoidedBy", fields: [voidedById], references: [id])
-
-  @@index([partnerId, transactionDate])
-  @@index([voidedAt])
-  @@index([createdById])
-}
-
-model ProductDelivery {
-  id           String    @id @default(uuid()) @db.Uuid
-  reference    String?   @unique
-  partnerId    String    @db.Uuid
-  deliveryDate DateTime  @db.Date
-  note         String?
-  totalAmount  BigInt
-  createdById  String    @db.Uuid
-  voidedAt     DateTime?
-  voidedById   String?   @db.Uuid
-  voidReason   String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-
-  items     DeliveryItem[]
-  partner   Partner        @relation(fields: [partnerId], references: [id])
-  createdBy User           @relation("DeliveryCreatedBy", fields: [createdById], references: [id])
-  voidedBy  User?          @relation("DeliveryVoidedBy", fields: [voidedById], references: [id])
-
-  @@index([partnerId, deliveryDate])
-  @@index([voidedAt])
-  @@index([createdById])
-}
-
-model DeliveryItem {
-  id         String  @id @default(uuid()) @db.Uuid
-  deliveryId String  @db.Uuid
-  quantity   Decimal @db.Decimal(18, 3)
-  unitPrice  BigInt
-  lineTotal  BigInt
-  note       String?
-
-  delivery ProductDelivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
-
-  @@index([deliveryId])
-}
-
-model Payment {
-  id          String           @id @default(uuid()) @db.Uuid
-  reference   String?          @unique
-  partnerId   String           @db.Uuid
-  paymentDate DateTime         @db.Date
-  direction   PaymentDirection
-  amount      BigInt
-  method      String           @default("cash")
-  note        String?
-  settlementId String?         @db.Uuid
-  createdById String           @db.Uuid
-  voidedAt    DateTime?
-  voidedById  String?          @db.Uuid
-  voidReason  String?
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
-
-  partner   Partner      @relation(fields: [partnerId], references: [id])
-  createdBy User         @relation("PaymentCreatedBy", fields: [createdById], references: [id])
-  voidedBy  User?        @relation("PaymentVoidedBy", fields: [voidedById], references: [id])
-  settlement Settlement? @relation(fields: [settlementId], references: [id])
-
-  @@index([partnerId, paymentDate])
-  @@index([voidedAt])
-  @@index([direction])
-  @@index([settlementId])
-}
-
-model Settlement {
-  id             String           @id @default(uuid()) @db.Uuid
-  reference      String?          @unique
-  partnerId      String           @db.Uuid
-  periodClosingId String?         @db.Uuid
-  amount         BigInt
-  direction      PaymentDirection
-  method         String           @default("cash")
-  note           String?
-  status         SettlementStatus @default(PARTIAL)
-  balanceAfter   BigInt
-  createdById    String           @db.Uuid
-  createdAt      DateTime         @default(now())
-
-  partner       Partner        @relation(fields: [partnerId], references: [id])
-  periodClosing PeriodClosing? @relation(fields: [periodClosingId], references: [id])
-  createdBy     User           @relation("SettlementCreatedBy", fields: [createdById], references: [id])
-  payments      Payment[]
-
-  @@index([partnerId])
-  @@index([periodClosingId])
-  @@index([createdAt])
-}
-
-model PeriodClosing {
-  id             String        @id @default(uuid()) @db.Uuid
-  partnerId      String        @db.Uuid
-  closingKey     String?
-  periodStart    DateTime      @db.Date
-  periodEnd      DateTime      @db.Date
-  closedAt       DateTime      @default(now())
-  closedById     String        @db.Uuid
-  status         ClosingStatus @default(ACTIVE)
-  openingBalance BigInt
-  totalLent      BigInt
-  totalDelivered BigInt
-  totalReceived  BigInt
-  totalPaidOut   BigInt
-  settlementAmount BigInt      @default(0)
-  closingBalance BigInt
-  note           String?
-  snapshot       Json
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-
-  partner     Partner      @relation(fields: [partnerId], references: [id])
-  closedBy    User         @relation("ClosingCreatedBy", fields: [closedById], references: [id])
-  settlements Settlement[]
-
-  @@unique([partnerId, closingKey])
-  @@index([partnerId, periodStart, periodEnd])
-  @@index([status])
-}
-
-model AuditLog {
-  id         String   @id @default(uuid()) @db.Uuid
-  actorId    String?  @db.Uuid
-  action     String
-  entityType String
-  entityId   String?
-  before     Json?
-  after      Json?
-  metadata   Json?
-  createdAt  DateTime @default(now())
-
-  actor User? @relation(fields: [actorId], references: [id])
-
-  @@index([entityType, entityId])
-  @@index([createdAt])
-  @@index([action])
 }

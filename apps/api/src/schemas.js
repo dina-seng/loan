@@ -12,84 +12,43 @@ const amountString = z.union([
 ]);
 
 const note = z.string().trim().max(500).optional().nullable().transform((v) => v || null);
-const reference = z.string().trim().min(1).max(80);
 
-export const lendingCreateSchema = z.object({
-  transactionDate: dateString,
+// The browser generates the entry id, so a retried save cannot create a second row.
+const entryId = z.string().uuid('លេខសម្គាល់ប្រតិបត្តិការមិនត្រឹមត្រូវ');
+
+/** Hand-entered entries are lend or product only; settling has its own endpoint. */
+export const entryCreateSchema = z.object({
+  id: entryId,
+  type: z.enum(['LEND', 'PRODUCT'], 'ប្រភេទប្រតិបត្តិការមិនត្រឹមត្រូវ'),
+  date: dateString,
   amount: amountString,
   note,
-  reference: reference.optional().nullable(),
 });
 
-export const deliveryCreateSchema = z.object({
-  reference: reference.optional().nullable(),
-  deliveryDate: dateString,
+export const settleSchema = z.object({
+  id: entryId,
+  date: dateString.optional(),
   note,
-  items: z.array(z.object({
-    quantity: z.string().regex(/^\d+(\.\d{1,3})?$/, 'បរិមាណមិនត្រឹមត្រូវ'),
-    unitPrice: amountString,
-    note: z.string().trim().max(300).optional().nullable().transform((v) => v || null),
-  })).min(1, 'ត្រូវបញ្ចូលយ៉ាងតិចមួយជួរ').max(100),
-});
-
-export const paymentCreateSchema = z.object({
-  paymentDate: dateString,
-  direction: z.enum(['PARTNER_TO_DAD', 'DAD_TO_PARTNER']),
-  amount: amountString,
-  method: z.string().trim().min(1).max(50).default('cash'),
-  note,
-  reference: reference.optional().nullable(),
-  settlementId: z.string().uuid().optional().nullable(),
-});
-
-export const settlementCreateSchema = z.object({
-  paymentDate: dateString,
-  amount: amountString,
-  direction: z.enum(['PARTNER_TO_DAD', 'DAD_TO_PARTNER']).optional(),
-  method: z.string().trim().min(1).max(50).default('cash'),
-  note,
-  periodClosingId: z.string().uuid().optional().nullable(),
-  reference: reference.optional().nullable(),
 });
 
 export const partnerCreateSchema = z.object({
-  name: z.string().trim().min(1).max(120),
-  phone: z.string().trim().max(40).optional().nullable(),
-  note: z.string().trim().max(500).optional().nullable(),
-  openingBalance: amountString.optional(),
+  name: z.string().trim().min(1, 'សូមបញ្ចូលឈ្មោះដៃគូ').max(120),
 });
 
-export const partnerUpdateSchema = partnerCreateSchema.partial().extend({
-  isActive: z.boolean().optional(),
-});
+export const partnerUpdateSchema = partnerCreateSchema;
 
 export const voidSchema = z.object({
   reason: z.string().trim().max(300).optional().nullable(),
 });
 
-export const closingCreateSchema = z.object({
-  startDate: dateString,
-  endDate: dateString,
-  note: z.string().trim().max(500).optional().nullable(),
-});
-
-export const reopenSchema = z.object({
-  reason: z.string().trim().min(1, 'សូមបញ្ជាក់មូលហេតុ').max(300),
-});
-
-export const listQuerySchema = z.object({
+export const entryListSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  pageSize: z.coerce.number().int().min(1).max(200).default(50),
   from: dateString.optional(),
   to: dateString.optional(),
-  type: z.enum(['LENDING', 'DELIVERY', 'PAYMENT']).optional(),
+  type: z.enum(['LEND', 'PRODUCT', 'SETTLE_IN', 'SETTLE_OUT']).optional(),
   search: z.string().trim().max(120).optional(),
   includeVoided: z.coerce.boolean().default(false),
-});
-
-export const periodQuerySchema = z.object({
-  startDate: dateString,
-  endDate: dateString,
 });
 
 /** Express middleware: validate and normalize req.body / req.query into req.valid. */

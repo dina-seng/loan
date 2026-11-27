@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
-import { labels, dadOwesPartner, partnerOwesDad } from '../i18n/labels.js';
-import { balanceTone, formatMoney } from '../utils/money.js';
+import { labels } from '../i18n/labels.js';
+import { balanceTone, formatMoney, formatPositive } from '../utils/money.js';
 import { AlertCircleIcon, XIcon } from './Icons.jsx';
 
 export function PageHeader({ title, subtitle, action }) {
@@ -98,19 +98,19 @@ export function SummaryCard({ label, amount, icon: Icon, accent = 'text-brand-70
   );
 }
 
-export function BalanceCard({ balance, direction, openingBalance, partnerName = 'អ៊ូដុំ', compact = false }) {
+/** The balance is always a sentence with a color — never a bare negative number. */
+export function BalanceCard({ balance, direction, compact = false }) {
   const tone = balanceTone(direction);
-  const message = direction === 'PARTNER_OWES_DAD' ? partnerOwesDad(partnerName)
-    : direction === 'DAD_OWES_PARTNER' ? dadOwesPartner(partnerName) : labels.accountSettled;
+  const message = direction === 'PARTNER_OWES_US' ? labels.theyOweUs
+    : direction === 'WE_OWE_PARTNER' ? labels.weOweThem : labels.cleared;
   return (
     <section className={`card border-2 bg-gradient-to-br ${tone.bg} ${tone.border} ${compact ? 'p-4' : 'p-5 sm:p-6'}`}>
       <div className="flex items-center gap-2">
         <span className={`h-2.5 w-2.5 rounded-full ${tone.dot}`} />
-        <p className="text-xs font-bold text-slate-600 sm:text-sm">{labels.currentBalance}</p>
+        <p className="text-xs font-bold text-slate-600 sm:text-sm">{labels.balanceHeadline}</p>
       </div>
-      <p className={`amount mt-1 break-all text-3xl font-extrabold leading-tight sm:text-5xl ${tone.text}`} data-testid="balance-amount">{formatMoney(balance)}</p>
-      <p className={`mt-2 text-sm font-bold sm:text-base ${tone.text}`}>{message}</p>
-      {openingBalance !== undefined && <p className="mt-1 text-xs text-slate-500">{labels.openingBalance}: {formatMoney(openingBalance)}</p>}
+      <p className={`amount mt-1 break-all text-3xl font-extrabold leading-tight sm:text-5xl ${tone.text}`} data-testid="balance-amount">{formatPositive(balance)}</p>
+      <p className={`mt-2 text-sm font-bold sm:text-base ${tone.text}`} data-testid="balance-message">{message}</p>
     </section>
   );
 }

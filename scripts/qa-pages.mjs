@@ -11,7 +11,7 @@ await page.click('button[type="submit"]');
 await page.waitForSelector('[data-testid="balance-amount"]');
 
 let failed = false;
-for (const route of ['/', '/transactions', '/settlement', '/history']) {
+for (const route of ['/', '/history']) {
   await page.goto(`http://127.0.0.1:5173${route}`);
   await page.waitForTimeout(700);
   const metrics = await page.evaluate(() => ({
@@ -24,9 +24,9 @@ for (const route of ['/', '/transactions', '/settlement', '/history']) {
   console.log(`${route} | overflow=${overflow} | heading=${metrics.heading}`);
 }
 
-// Open the entry modal from the transactions page and verify it fits the screen.
-await page.goto('http://127.0.0.1:5173/transactions');
-await page.getByRole('button', { name: 'បន្ថែមប្រតិបត្តិការ' }).click();
+// Open the entry modal from the dashboard and verify it fits the screen.
+await page.goto('http://127.0.0.1:5173/');
+await page.getByRole('button', { name: 'ឱ្យខ្ចី' }).click();
 await page.waitForSelector('[role="dialog"]');
 const modal = await page.evaluate(() => {
   const el = document.querySelector('[role="dialog"]');

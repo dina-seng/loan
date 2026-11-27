@@ -5,8 +5,6 @@ import { ToastProvider } from './components/Toast.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import { PartnerProvider } from './partners.jsx';
 import DashboardPage from './pages/DashboardPage.jsx';
-import TransactionsPage from './pages/TransactionsPage.jsx';
-import SettlementPage from './pages/SettlementPage.jsx';
 import HistoryPage from './pages/HistoryPage.jsx';
 
 function ProtectedLayout() {
@@ -26,8 +24,6 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route element={<ProtectedLayout />}>
             <Route index element={<DashboardPage />} />
-            <Route path="transactions" element={<TransactionsPage />} />
-            <Route path="settlement" element={<SettlementPage />} />
             <Route path="history" element={<HistoryPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

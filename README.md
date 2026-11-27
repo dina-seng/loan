@@ -5,8 +5,7 @@ A mobile-first, Khmer-first ledger for Dad (ប៉ា) and **multiple business p
 - Dad lends money **to** a partner → that partner owes Dad more.
 - A partner delivers products **to** Dad → Dad owes that partner more.
 - Payments can be made in either direction, partially or in full.
-- Any custom date range can be closed **per partner**; unpaid balances carry forward.
-- Deliveries are plain `Quantity × Unit Price` rows — no product catalog is needed.
+- A delivery is a single money amount (the value of the goods received).
 
 All money is stored as integer KHR (៛) in PostgreSQL `BIGINT` columns. Balances are **derived** from validated ledger records, never from an editable balance column.
 
@@ -93,7 +92,7 @@ npm run lint          # ESLint
 npm run build         # Prisma generate + production web build
 ```
 
-Financial tests cover: all four balance effects, partial payments, opening-balance carry-forward, closing without double counting, immutable historical snapshots, duplicate submission protection, void reversal, multi-row deliveries with no product IDs, custom periods, closed-period write protection, concurrent payments, partner creation/renaming and full per-partner isolation of loans, deliveries, payments and closings.
+Financial tests cover: the four entry effects, the worked example (5,000,000 lend − 4,504,500 product = 495,500), settling to zero, settling the other direction, void exclusion, duplicate entry ids, same-day entry after settle, validation and partner name normalization.
 
 Optional browser QA (requires dev servers running and Microsoft Edge at the default Windows path, or edit `executablePath` in the scripts):
 
@@ -151,64 +150,56 @@ apps/api/src/
   config.js, db.js, errors.js        configuration, Prisma, central error handling
   money.js, dates.js                 exact integer money + Cambodia date parsing
   ledger.js                          THE balance calculation service (single source of truth)
-  auth.js, idempotency.js, audit.js  sessions, duplicate protection, audit trail
-  schemas.js, serialize.js           validation and safe JSON output
+  auth.js                            cookie sessions and scrypt passwords
+  schemas.js                         request validation
   routes/                            /api/v1 endpoint groups
-apps/api/prisma/schema.prisma        users, partners, ledger records, closings, audit + sessions/keys
+apps/api/prisma/schema.prisma        users, sessions, partners and the single Entry table
 apps/web/src/
   partners.jsx                       selected-partner context (persisted in localStorage)
-  pages/                             Dashboard, Transactions, Settlement, History
-  components/                        Layout, PartnerSwitcher, EntryModal, Ui, TransactionList
+  pages/                             Dashboard, History
+  components/                        Layout, PartnerSwitcher, EntryModal, EntryList, Ui
   i18n/labels.js                     Khmer-first labels and error messages
   utils/money.js                     display formatting only — no financial logic
 ```
 
-### Financial formula (backend only)
+### One Entry table
+
+Every record is one row in `Entry` (`id`, `partnerId`, `type`, `entryDate`, `amount`, `note`, `voidedAt`). The type decides the sign; the amount is always a positive whole riel.
+
+| Type | Meaning | Effect on the balance |
+|---|---|---|
+| `LEND` | cash we gave the partner | `+` |
+| `PRODUCT` | value of goods we received | `−` |
+| `SETTLE_IN` | the partner paid us | `−` |
+| `SETTLE_OUT` | we paid the partner | `+` |
 
 ```
-Partner Balance = Partner Opening Balance
-                + Money Lent to Partner
-                − Product Delivery Costs
-                − Payments from Partner to Dad
-                + Payments from Dad to Partner
+Partner Balance = LEND − PRODUCT − SETTLE_IN + SETTLE_OUT
 ```
 
-The opening balance belongs to each partner, not to the account. Every ledger record carries `partnerId`; the API receives the selected partner via the `X-Partner-Id` header and the browser persists that choice across tabs.
+`computeBalance()` in `apps/api/src/ledger.js` is the only balance calculation; the dashboard, partner list, history and settle all use it.
 
-- Positive → `PARTNER_OWES_DAD` (`{Partner Name} ជំពាក់ប្រាក់ប៉ា`)
-- Negative → `DAD_OWES_PARTNER` (`ប៉ាជំពាក់ប្រាក់ {Partner Name}`)
-- Zero → `SETTLED` (បានទូទាត់រួចរាល់)
+- Positive → `PARTNER_OWES_US` (គេជំពាក់យើង, amber)
+- Negative → `WE_OWE_PARTNER` (យើងជំពាក់គេ, blue)
+- Zero → `SETTLED` (ស្មើរួចរាល់, green)
 
-Line totals = `round(quantity × unit price)` computed from exact integers on the server; delivery items store only quantity, unit price, computed line total and an optional note. Dad never enters a delivery reference: the server generates an internal code for uniqueness and the UI shows only `ការទទួលទំនិញ` plus the note. Renaming a partner changes every label and statement immediately without touching any amount. Voiding sets `voidedAt` and excludes the entry from all sums; the original record is preserved and audited.
-
-When the Payment tab opens, the direction defaults from the partner's current balance (`Partner owes Dad` → partner pays Dad; `Dad owes partner` → Dad pays partner), while both options remain selectable for advance payments. Any authenticated user has full read/write permission for partners and financial records; no owner-only role gate is applied.
-
-### Period closing
-
-A closing stores an immutable snapshot (partner ID, opening balance, all four totals, closing balance, generated-at) plus the exact date range. Uniqueness and overlap checks are scoped per partner, so closing Partner A's period never blocks Partner B. Closings do **not** modify the ledger or add a synthetic balance entry, so nothing is counted twice and outstanding balances carry forward automatically. Writes into an actively closed date range are rejected for that partner; a controlled reopen (`POST /period-closings/:id/reopen` with a reason) unlocks the range and is audited. Earlier statement snapshots remain readable.
+The settle action adds ONE entry for the whole balance (`SETTLE_IN` when they owe us, `SETTLE_OUT` when we owe them). There are no partial payments, and nothing is locked afterwards — a new entry on the same day is accepted. Deleting sets `voidedAt` (soft delete) and excludes the row from every balance. The browser generates each entry id, so retrying a save with the same id returns the existing row instead of writing a second one.
 
 ## API endpoints
 
-All under `/api/v1`, JSON responses shaped `{ ok, data, meta? }` or `{ ok: false, error: { code, message, details? } }`. Financial POSTs require an `Idempotency-Key` header; every partner-scoped endpoint requires an `X-Partner-Id` header (the CSV export also accepts `?partnerId=`).
+All under `/api/v1`, JSON responses shaped `{ ok, data, meta? }` or `{ ok: false, error: { code, message, details? } }`. Every partner-scoped endpoint requires an `X-Partner-Id` header (the CSV export also accepts `?partnerId=`). Financial POSTs include a browser-generated `id`; repeating that id returns the existing row.
 
 | Group | Endpoints |
 |---|---|
 | `/auth` | `POST /login`, `POST /logout`, `GET /me` |
-| `/partners` | `GET /` (with balances), `POST /`, `PATCH /:id` |
-| `/dashboard` | `GET /` (`?periodId=`) |
-| `/lending` | `GET /`, `GET /:id`, `POST /`, `POST /:id/void` |
-| `/deliveries` | `GET /`, `GET /:id`, `POST /`, `POST /:id/void` (`reference` optional; generated internally) |
-| `/payments` | `GET /`, `GET /:id`, `POST /`, `POST /:id/void` |
-| `/settlements` | `GET /`, `GET /:id`, `POST /` |
-| `/period-closings` | `GET /`, `GET /preview`, `GET /:id`, `GET /:id/statement`, `POST /`, `POST /:id/reopen` |
-| `/transactions` | `GET /`, `GET /:id` |
-| `/reports` | `GET /summary`, `GET /statements`, `GET /statement/:id`, `GET /transactions.csv` |
+| `/partners` | `GET /` (with balances), `POST /`, `PATCH /:id`, `POST /:id/settle` |
+| `/dashboard` | `GET /` |
+| `/entries` | `GET /`, `GET /:id`, `POST /`, `POST /:id/void` |
+| `/reports` | `GET /transactions.csv` (backup export) |
 | Health | `GET /health` (unauthenticated, checks DB) |
 
 ## Known limitations
 
-- One login is seeded; additional users share full write permissions (there is no account-management UI yet). Financial data is per partner, and each partner has its own opening balance.
-- Reopening a closing is intentionally restricted: later active closings must be reopened first, in reverse order.
+- One login is seeded; additional users share full write permissions (there is no account-management UI yet).
 - Login throttling is process-local; use a shared rate limiter (e.g. Redis) when running multiple API instances.
-- No PDF library is included; printable statements use the browser print dialog and CSV export.
 - The legacy Apps Script implementation has been removed; see `MIGRATION_PLAN.md` for its migration mapping and git history for the old files.

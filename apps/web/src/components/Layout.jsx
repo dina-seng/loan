@@ -4,13 +4,11 @@ import { usePartner } from '../partners.jsx';
 import { labels } from '../i18n/labels.js';
 import { formatDate, todayISO } from '../utils/money.js';
 import { LogOutIcon } from './Icons.jsx';
-import { ClockIcon, HomeIcon, ListIcon, ScaleIcon, UserIcon } from './NavIcons.jsx';
+import { ClockIcon, HomeIcon, UserIcon } from './NavIcons.jsx';
 import PartnerSwitcher from './PartnerSwitcher.jsx';
 
 const nav = [
   { to: '/', label: labels.dashboard, Icon: HomeIcon, end: true },
-  { to: '/transactions', label: labels.transactions, Icon: ListIcon },
-  { to: '/settlement', label: labels.settlement, Icon: ScaleIcon },
   { to: '/history', label: labels.history, Icon: ClockIcon },
 ];
 
@@ -52,7 +50,7 @@ export default function Layout() {
             <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
               <PartnerSwitcher compact />
               <span className="hidden items-center gap-1.5 rounded-full bg-brand-700 px-3 py-1.5 text-xs font-bold sm:inline-flex">
-                <UserIcon className="h-4 w-4" />{user?.displayName || labels.account}
+                <UserIcon className="h-4 w-4" />{user?.displayName || labels.partner}
               </span>
               <button type="button" onClick={logout} className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-700 hover:bg-brand-600" aria-label={labels.logout} title={labels.logout}>
                 <LogOutIcon className="h-5 w-5" />
@@ -67,7 +65,7 @@ export default function Layout() {
       </div>
 
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
-        <div className="mx-auto grid max-w-lg grid-cols-4">
+        <div className="mx-auto grid max-w-lg grid-cols-2">
           {nav.map(({ to, label, Icon, end }) => (
             <NavLink key={to} to={to} end={end} className={({ isActive }) => `flex min-h-[60px] flex-col items-center justify-center gap-0.5 px-0.5 text-[10px] font-bold leading-tight ${isActive ? 'text-brand-700' : 'text-slate-500'}`}>
               <Icon className="h-[22px] w-[22px]" />

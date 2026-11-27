@@ -14,12 +14,7 @@ import { authRequired } from './auth.js';
 import { partnerRequired } from './partner.js';
 import { partnersRouter } from './routes/partners.js';
 import { dashboardRouter } from './routes/dashboard.js';
-import { lendingRouter } from './routes/lending.js';
-import { deliveriesRouter } from './routes/deliveries.js';
-import { paymentsRouter } from './routes/payments.js';
-import { settlementsRouter } from './routes/settlements.js';
-import { periodClosingsRouter } from './routes/period-closings.js';
-import { transactionsRouter } from './routes/transactions.js';
+import { entriesRouter } from './routes/entries.js';
 import { reportsRouter } from './routes/reports.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -55,7 +50,7 @@ export function createApp() {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Idempotency-Key', 'X-Partner-Id'],
+    allowedHeaders: ['Content-Type', 'X-Partner-Id'],
   }));
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
@@ -75,16 +70,11 @@ export function createApp() {
   api.use('/partners', partnersRouter);
 
   // Every financial route is scoped to the selected partner before reaching its router.
-  const partnerScoped = ['/dashboard', '/lending', '/deliveries', '/payments', '/settlements', '/period-closings', '/transactions', '/reports'];
+  const partnerScoped = ['/dashboard', '/entries', '/reports'];
   api.use(partnerScoped, authRequired, partnerRequired);
 
   api.use('/dashboard', dashboardRouter);
-  api.use('/lending', lendingRouter);
-  api.use('/deliveries', deliveriesRouter);
-  api.use('/payments', paymentsRouter);
-  api.use('/settlements', settlementsRouter);
-  api.use('/period-closings', periodClosingsRouter);
-  api.use('/transactions', transactionsRouter);
+  api.use('/entries', entriesRouter);
   api.use('/reports', reportsRouter);
   app.use('/api/v1', api);
 

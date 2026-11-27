@@ -1,22 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { errorMessage, dadPaysPartner, partnerPaysDad } from './labels.js';
+import { errorMessage } from './labels.js';
 
-describe('Khmer error and direction messages', () => {
+describe('Khmer error messages', () => {
   it('shows the specific backend field message instead of a generic error', () => {
     const error = {
       code: 'VALIDATION_ERROR',
       message: 'ទិន្នន័យបញ្ចូលមិនត្រឹមត្រូវ សូមពិនិត្យឡើងវិញ',
-      details: { name: 'សូមបញ្ចូលឈ្មោះដៃគូ' },
+      details: { name: 'ឈ្មោះដៃគូនេះមានរួចហើយ' },
     };
-    expect(errorMessage(error)).toBe('សូមបញ្ចូលឈ្មោះដៃគូ');
+    expect(errorMessage(error)).toBe('ឈ្មោះដៃគូនេះមានរួចហើយ');
   });
 
-  it('falls back to the backend message when there are no field details', () => {
-    expect(errorMessage({ code: 'CONFLICT', message: 'ទិន្នន័យនេះមានរួចហើយ' })).toBe('ទិន្នន័យនេះមានរួចហើយ');
+  it('maps known error codes to Khmer', () => {
+    expect(errorMessage({ code: 'NOTHING_TO_SETTLE' })).toBe('មិនមានសមតុល្យត្រូវទូទាត់ទេ');
+    expect(errorMessage({ code: 'UNAUTHORIZED' })).toBe('សូមចូលប្រើគណនីឡើងវិញ');
   });
 
-  it('uses the partner name in both payment directions', () => {
-    expect(partnerPaysDad('សុភី')).toBe('សុភី សងប្រាក់មកប៉ា');
-    expect(dadPaysPartner('សុភី')).toBe('ប៉ាសងប្រាក់ទៅ សុភី');
+  it('falls back to the error message text', () => {
+    expect(errorMessage({ code: 'UNKNOWN', message: 'ខុស' })).toBe('ខុស');
   });
 });

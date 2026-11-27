@@ -1,88 +1,66 @@
 import { Router } from 'express';
 import { authRequired } from '../auth.js';
 import { prisma } from '../db.js';
-import { asyncHandler, notFound, ok } from '../errors.js';
-import { fetchLedgerEntries, computeBalance, balanceDirection, summarize } from '../ledger.js';
+import { asyncHandler, conflict, notFound, ok } from '../errors.js';
+import { balanceDirection, getPartnerBalance, listPartnerBalances, settlePartner, serializeEntry } from '../ledger.js';
 import { money } from '../money.js';
-import { audit, jsonSafe } from '../audit.js';
-import { validate } from '../schemas.js';
-import { partnerCreateSchema, partnerUpdateSchema } from '../schemas.js';
+import { normalizePartnerName } from '../partner.js';
+import { parseDate, todayISO } from '../dates.js';
+import { settleSchema, partnerCreateSchema, partnerUpdateSchema, validate } from '../schemas.js';
 
 export const partnersRouter = Router();
 partnersRouter.use(authRequired);
 
-function partnerJson(partner, balance, totals) {
-  return {
-    id: partner.id,
-    name: partner.name,
-    phone: partner.phone,
-    note: partner.note,
-    isActive: partner.isActive,
-    openingBalance: money(partner.openingBalance),
-    balance: money(balance),
-    direction: balanceDirection(balance),
-    totals: totals ? {
-      totalLent: money(totals.totalLent),
-      totalProductValue: money(totals.totalDelivered),
-      receivedPayments: money(totals.totalReceived),
-      outgoingPayments: money(totals.totalPaidOut),
-    } : undefined,
-    createdAt: partner.createdAt,
-    updatedAt: partner.updatedAt,
-  };
+async function assertUniqueName(name, excludeId) {
+  const existing = await prisma.partner.findFirst({
+    where: { name: { equals: name, mode: 'insensitive' }, ...(excludeId ? { id: { not: excludeId } } : {}) },
+    select: { id: true },
+  });
+  if (existing) throw conflict('CONFLICT', { name: 'ឈ្មោះដៃគូនេះមានរួចហើយ' }, 'ឈ្មោះដៃគូនេះមានរួចហើយ');
 }
 
-partnersRouter.get('/', asyncHandler(async (req, res) => {
-  const includeInactive = String(req.query.includeInactive || '') === 'true';
-  const [partners, entries] = await Promise.all([
-    prisma.partner.findMany({
-      where: includeInactive ? {} : { isActive: true },
-      orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
-    }),
-    fetchLedgerEntries({ partnerName: '' }),
-  ]);
-  const grouped = new Map();
-  for (const entry of entries) {
-    if (!grouped.has(entry.partnerId)) grouped.set(entry.partnerId, []);
-    grouped.get(entry.partnerId).push(entry);
-  }
-  ok(res, partners.map((partner) => {
-    const own = grouped.get(partner.id) || [];
-    return partnerJson(partner, computeBalance(own, partner.openingBalance), summarize(own));
-  }));
+/** Every partner with the balance produced by the single balance function. */
+partnersRouter.get('/', asyncHandler(async (_req, res) => {
+  ok(res, await listPartnerBalances());
 }));
 
 partnersRouter.post('/', validate(partnerCreateSchema), asyncHandler(async (req, res) => {
-  const data = req.valid;
-  const partner = await prisma.partner.create({
-    data: {
-      name: data.name,
-      phone: data.phone || null,
-      note: data.note || null,
-      openingBalance: data.openingBalance !== undefined ? BigInt(data.openingBalance) : 0n,
-    },
-  });
-  await audit(req.user.id, 'PARTNER_CREATE', 'Partner', partner.id, { after: jsonSafe(partnerJson(partner, partner.openingBalance)) });
-  ok(res, partnerJson(partner, partner.openingBalance), undefined, 201);
+  const name = normalizePartnerName(req.valid.name);
+  await assertUniqueName(name);
+  const partner = await prisma.partner.create({ data: { name } });
+  ok(res, {
+    id: partner.id, name: partner.name, balance: '0', direction: 'SETTLED',
+    createdAt: partner.createdAt, updatedAt: partner.updatedAt,
+  }, undefined, 201);
 }));
 
 partnersRouter.patch('/:id', validate(partnerUpdateSchema), asyncHandler(async (req, res) => {
   const before = await prisma.partner.findUnique({ where: { id: req.params.id } });
   if (!before) throw notFound();
-  const data = req.valid;
-  const partner = await prisma.partner.update({
-    where: { id: before.id },
-    data: {
-      ...(data.name !== undefined ? { name: data.name } : {}),
-      ...(data.phone !== undefined ? { phone: data.phone || null } : {}),
-      ...(data.note !== undefined ? { note: data.note || null } : {}),
-      ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
-      ...(data.openingBalance !== undefined ? { openingBalance: BigInt(data.openingBalance) } : {}),
-    },
+  const name = normalizePartnerName(req.valid.name);
+  await assertUniqueName(name, before.id);
+  const partner = await prisma.partner.update({ where: { id: before.id }, data: { name } });
+  const balance = await getPartnerBalance(partner.id);
+  ok(res, {
+    id: partner.id,
+    name: partner.name,
+    balance: money(balance),
+    direction: balanceDirection(balance),
+    createdAt: partner.createdAt,
+    updatedAt: partner.updatedAt,
   });
-  const balance = computeBalance(await fetchLedgerEntries({ partnerId: partner.id }), partner.openingBalance);
-  await audit(req.user.id, 'PARTNER_UPDATE', 'Partner', partner.id, {
-    before: jsonSafe(partnerJson(before, 0n)), after: jsonSafe(partnerJson(partner, balance)),
+}));
+
+/** The single settle action: one entry for the whole current balance. */
+partnersRouter.post('/:id/settle', validate(settleSchema), asyncHandler(async (req, res) => {
+  const partner = await prisma.partner.findUnique({ where: { id: req.params.id } });
+  if (!partner) throw notFound();
+  const { row, created } = await settlePartner({
+    partnerId: partner.id,
+    id: req.valid.id,
+    date: parseDate(req.valid.date || todayISO()),
+    note: req.valid.note,
+    userId: req.user.id,
   });
-  ok(res, partnerJson(partner, balance));
+  ok(res, serializeEntry(row), undefined, created ? 201 : 200);
 }));

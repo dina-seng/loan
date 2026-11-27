@@ -20,12 +20,6 @@ export function toISODate(date) {
   return d.toISOString().slice(0, 10);
 }
 
-export function addDays(date, days) {
-  const d = date instanceof Date ? new Date(date.getTime()) : parseDate(date);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d;
-}
-
 /** Today in the business timezone (Cambodia by default), never UTC. */
 export function todayISO() {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -36,18 +30,6 @@ export function todayISO() {
   }).formatToParts(new Date());
   const get = (type) => parts.find((p) => p.type === type)?.value;
   return `${get('year')}-${get('month')}-${get('day')}`;
-}
-
-export function assertRange(startValue, endValue) {
-  const start = parseDate(startValue, 'startDate');
-  const end = parseDate(endValue, 'endDate');
-  if (start > end) {
-    throw badRequest('VALIDATION_ERROR', { endDate: 'ថ្ងៃបញ្ចប់ត្រូវនៅក្រោយ ឬស្មើថ្ងៃចាប់ផ្តើម' });
-  }
-  if (end > parseDate(todayISO())) {
-    throw badRequest('VALIDATION_ERROR', { endDate: 'មិនអាចបិទខួបដែលមិនទាន់ដល់ថ្ងៃនេះបានទេ' });
-  }
-  return { start, end };
 }
 
 export function dateWhere(field, from, to) {

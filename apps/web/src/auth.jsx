@@ -4,15 +4,15 @@ import { api } from './api.js';
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [state, setState] = useState({ loading: true, user: null, account: null });
+  const [state, setState] = useState({ loading: true, user: null });
 
   const refresh = useCallback(async () => {
     try {
       const { data } = await api('/auth/me');
-      setState({ loading: false, user: data.user, account: data.account });
+      setState({ loading: false, user: data.user });
       return data.user;
     } catch {
-      setState({ loading: false, user: null, account: null });
+      setState({ loading: false, user: null });
       return null;
     }
   }, []);
@@ -26,7 +26,7 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(async () => {
     try { await api('/auth/logout', { method: 'POST' }); } finally {
-      setState({ loading: false, user: null, account: null });
+      setState({ loading: false, user: null });
     }
   }, []);
 
