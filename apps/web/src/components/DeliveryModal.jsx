@@ -13,7 +13,7 @@ export default function DeliveryModal({ open, onClose, firstOpenDate, onSaved })
   const [note, setNote] = useState('');
   const [lines, setLines] = useState([emptyLine()]);
   const [productFormIndex, setProductFormIndex] = useState(null);
-  const [newProduct, setNewProduct] = useState({ name: '', unit: '', defaultUnitPrice: '' });
+  const [newProduct, setNewProduct] = useState({ name: '' });
   const [productBusy, setProductBusy] = useState(false);
   const [productError, setProductError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -27,7 +27,7 @@ export default function DeliveryModal({ open, onClose, firstOpenDate, onSaved })
     setNote('');
     setLines([emptyLine()]);
     setProductFormIndex(null);
-    setNewProduct({ name: '', unit: '', defaultUnitPrice: '' });
+    setNewProduct({ name: '' });
     setProductError('');
     setError('');
     setWarning(firstOpenDate ? labels.closedPeriodDefault : '');
@@ -59,20 +59,17 @@ export default function DeliveryModal({ open, onClose, firstOpenDate, onSaved })
         body: {
           id: newEntryId(),
           name: newProduct.name.trim(),
-          unit: newProduct.unit || null,
-          defaultUnitPrice: newProduct.defaultUnitPrice
-            ? normalizeAmountInput(newProduct.defaultUnitPrice) : null,
         },
       });
       setProducts((previous) => [...previous, data]);
       updateLine(index, {
         productId: data.id,
         productName: data.name,
-        unit: data.unit || '',
-        unitPrice: data.defaultUnitPrice || '',
+        unit: '',
+        unitPrice: '',
       });
       setProductFormIndex(null);
-      setNewProduct({ name: '', unit: '', defaultUnitPrice: '' });
+      setNewProduct({ name: '' });
     } catch (err) {
       setProductError(errorMessage(err));
     } finally {
@@ -146,7 +143,7 @@ export default function DeliveryModal({ open, onClose, firstOpenDate, onSaved })
                     </select>
                   </Field>
                   <button type="button" className="mt-1 text-xs font-bold text-brand-700 underline"
-                    onClick={() => { setProductFormIndex(index); setNewProduct({ name: '', unit: '', defaultUnitPrice: '' }); setProductError(''); }}>
+                    onClick={() => { setProductFormIndex(index); setNewProduct({ name: '' }); setProductError(''); }}>
                     {labels.addProduct}
                   </button>
                 </div>
@@ -163,15 +160,6 @@ export default function DeliveryModal({ open, onClose, firstOpenDate, onSaved })
                   <Field label={labels.productName}>
                     <input className="input" value={newProduct.name} maxLength={120} onChange={(event) => setNewProduct({ ...newProduct, name: event.target.value })} />
                   </Field>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Field label={labels.unit}>
-                      <input className="input" value={newProduct.unit} maxLength={40} onChange={(event) => setNewProduct({ ...newProduct, unit: event.target.value })} />
-                    </Field>
-                    <Field label={labels.defaultUnitPrice}>
-                      <input className="input amount text-right" inputMode="numeric" value={newProduct.defaultUnitPrice} placeholder="0"
-                        onChange={(event) => setNewProduct({ ...newProduct, defaultUnitPrice: normalizeAmountInput(event.target.value) })} />
-                    </Field>
-                  </div>
                   <InlineError message={productError} />
                   <div className="flex gap-2">
                     <button type="button" className="btn-secondary flex-1" onClick={() => setProductFormIndex(null)}>{labels.cancel}</button>
