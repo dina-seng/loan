@@ -25,6 +25,7 @@ export const labels = {
   settlements: 'ការទូទាត់',
   closings: 'បិទកំឡុងពេល',
   statements: 'របាយការណ៍',
+  periodReport: 'របាយការណ៍តាមកំឡុងពេល',
   audit: 'ប្រវត្តិកែប្រែ',
 
   // the four entry types
@@ -131,6 +132,9 @@ export const labels = {
   search: 'ស្វែងរក',
   from: 'ចាប់ពី',
   to: 'រហូតដល់',
+  thisMonth: 'ខែនេះ',
+  lastMonth: 'ខែមុន',
+  allTime: 'គ្រប់ពេល',
 
   // warnings and confirmations
   closedPeriodWarning: 'កាលបរិច្ឆេទនេះស្ថិតក្នុងកំឡុងពេលដែលបានបិទហើយ។ ថ្ងៃបិទចុងក្រោយ {last}។ ថ្ងៃដំបូងដែលអាចបញ្ចូលបាន {earliest}។',

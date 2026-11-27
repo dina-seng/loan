@@ -11,7 +11,7 @@ import SettlementModal from '../components/SettlementModal.jsx';
 import EntryList from '../components/EntryList.jsx';
 import { BanknoteIcon, PackageIcon } from '../components/Icons.jsx';
 import { ScaleIcon } from '../components/NavIcons.jsx';
-import { todayISO } from '../utils/money.js';
+import { defaultPeriodISO, monthRangeISO, todayISO } from '../utils/money.js';
 
 export default function DashboardPage() {
   const [data, setData] = useState(null);
@@ -19,7 +19,7 @@ export default function DashboardPage() {
   const [confirmSettle, setConfirmSettle] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [range, setRange] = useState({ from: '', to: '' });
+  const [range, setRange] = useState(defaultPeriodISO);
   const settleIdRef = useRef(newEntryId());
   const { show } = useToast();
   const { partner, refresh } = usePartner();
@@ -69,6 +69,13 @@ export default function DashboardPage() {
     show(labels.saved);
   };
 
+  const today = todayISO();
+  const periodPresets = [
+    { id: 'thisMonth', label: labels.thisMonth, range: defaultPeriodISO() },
+    { id: 'lastMonth', label: labels.lastMonth, range: monthRangeISO(today, -1) },
+    { id: 'allTime', label: labels.allTime, range: { from: '', to: '' } },
+  ];
+
   const quickActions = [
     { id: 'LEND', label: labels.lend, Icon: BanknoteIcon, style: 'bg-amber-50 text-amber-800 border-amber-200' },
     { id: 'DELIVERY', label: labels.product, Icon: PackageIcon, style: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
@@ -94,15 +101,26 @@ export default function DashboardPage() {
           )}
 
           <section>
-            <h3 className="mb-2 text-sm font-extrabold text-slate-800">{labels.statements}</h3>
+            <h3 className="mb-2 text-sm font-extrabold text-slate-800">{labels.periodReport}</h3>
+            <div className="mb-2 flex gap-1.5 overflow-x-auto pb-1">
+              {periodPresets.map((preset) => {
+                const active = preset.range.from === range.from && preset.range.to === range.to;
+                return (
+                  <button key={preset.id} type="button" onClick={() => setRange(preset.range)}
+                    className={`shrink-0 rounded-xl border px-3 py-1.5 text-xs font-bold ${active ? 'border-brand-500 bg-brand-50 text-brand-800' : 'border-slate-200 text-slate-600'}`}>
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
             <div className="mb-2 grid grid-cols-2 gap-2">
               <label className="block">
                 <span className="label">{labels.from}</span>
-                <input className="input" type="date" value={range.from} onChange={(event) => setRange({ ...range, from: event.target.value })} />
+                <input className="input" type="date" value={range.from} max={today} onChange={(event) => setRange({ ...range, from: event.target.value })} />
               </label>
               <label className="block">
                 <span className="label">{labels.to}</span>
-                <input className="input" type="date" value={range.to} onChange={(event) => setRange({ ...range, to: event.target.value })} />
+                <input className="input" type="date" value={range.to} max={today} onChange={(event) => setRange({ ...range, to: event.target.value })} />
               </label>
             </div>
             <div className="grid grid-cols-2 gap-2">
