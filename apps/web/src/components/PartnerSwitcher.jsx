@@ -55,7 +55,7 @@ export default function PartnerSwitcher({ compact = false }) {
       <Modal open={open} onClose={() => setOpen(false)} title={labels.selectPartner} footer={
         <div className="flex gap-2">
           <button type="button" className="btn-secondary flex-1" onClick={() => setOpen(false)}>{labels.cancel}</button>
-          <button type="button" className="btn-primary flex-1" onClick={() => openEditor('new')}><PlusIcon className="h-5 w-5" />{labels.addPartner}</button>
+          <button type="button" className="btn-primary flex-1" onClick={() => openEditor()}><PlusIcon className="h-5 w-5" />{labels.addPartner}</button>
         </div>
       }>
         <div className="space-y-2">

@@ -105,11 +105,9 @@ export default function DashboardPage() {
                 <input className="input" type="date" value={range.to} onChange={(event) => setRange({ ...range, to: event.target.value })} />
               </label>
             </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2">
               <SummaryCard label={labels.totalLent} amount={data.totals.totalLent} icon={BanknoteIcon} accent="text-amber-800" testId="total-lent" />
               <SummaryCard label={labels.totalProductValue} amount={data.totals.totalProductValue} icon={PackageIcon} accent="text-emerald-700" testId="total-products" />
-              <SummaryCard label={labels.receivedPayments} amount={data.totals.receivedPayments} icon={ScaleIcon} accent="text-sky-700" testId="total-received" />
-              <SummaryCard label={labels.outgoingPayments} amount={data.totals.outgoingPayments} icon={ScaleIcon} accent="text-violet-700" testId="total-paid-out" />
             </div>
             <p className="mt-2 text-[11px] text-slate-500">
               {labels.transactionCount}: {data.totals.transactionCount} · {labels.netFlow}: {data.netFlow}
