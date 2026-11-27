@@ -12,6 +12,10 @@ export default function DeliveryModal({ open, onClose, firstOpenDate, onSaved })
   const [date, setDate] = useState(todayISO());
   const [note, setNote] = useState('');
   const [lines, setLines] = useState([emptyLine()]);
+  const [productFormIndex, setProductFormIndex] = useState(null);
+  const [newProduct, setNewProduct] = useState({ name: '', unit: '', defaultUnitPrice: '' });
+  const [productBusy, setProductBusy] = useState(false);
+  const [productError, setProductError] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [warning, setWarning] = useState('');
@@ -22,6 +26,9 @@ export default function DeliveryModal({ open, onClose, firstOpenDate, onSaved })
     setDate(firstOpenDate || todayISO());
     setNote('');
     setLines([emptyLine()]);
+    setProductFormIndex(null);
+    setNewProduct({ name: '', unit: '', defaultUnitPrice: '' });
+    setProductError('');
     setError('');
     setWarning(firstOpenDate ? labels.closedPeriodDefault : '');
     idRef.current = newEntryId();
@@ -40,6 +47,37 @@ export default function DeliveryModal({ open, onClose, firstOpenDate, onSaved })
       unit: product.unit || '',
       unitPrice: product.defaultUnitPrice || '',
     } : { productId: '', productName: '', unit: '', unitPrice: '' });
+  }
+
+  async function saveProduct(index) {
+    setProductError('');
+    if (!newProduct.name.trim()) return setProductError(labels.productRequired);
+    setProductBusy(true);
+    try {
+      const { data } = await api('/products', {
+        method: 'POST',
+        body: {
+          id: newEntryId(),
+          name: newProduct.name.trim(),
+          unit: newProduct.unit || null,
+          defaultUnitPrice: newProduct.defaultUnitPrice
+            ? normalizeAmountInput(newProduct.defaultUnitPrice) : null,
+        },
+      });
+      setProducts((previous) => [...previous, data]);
+      updateLine(index, {
+        productId: data.id,
+        productName: data.name,
+        unit: data.unit || '',
+        unitPrice: data.defaultUnitPrice || '',
+      });
+      setProductFormIndex(null);
+      setNewProduct({ name: '', unit: '', defaultUnitPrice: '' });
+    } catch (err) {
+      setProductError(errorMessage(err));
+    } finally {
+      setProductBusy(false);
+    }
   }
 
   async function submit(event) {
@@ -98,14 +136,20 @@ export default function DeliveryModal({ open, onClose, firstOpenDate, onSaved })
           {lines.map((line, index) => (
             <div key={index} className="rounded-2xl border border-slate-200 p-3">
               <div className="grid gap-2 sm:grid-cols-2">
-                <Field label={labels.selectProduct}>
-                  <select className="input" value={line.productId} onChange={(event) => chooseProduct(index, event.target.value)}>
-                    <option value="">{labels.selectProduct}</option>
-                    {products.map((product) => (
-                      <option key={product.id} value={product.id}>{product.name}</option>
-                    ))}
-                  </select>
-                </Field>
+                <div>
+                  <Field label={labels.selectProduct}>
+                    <select className="input" value={line.productId} onChange={(event) => chooseProduct(index, event.target.value)}>
+                      <option value="">{labels.selectProduct}</option>
+                      {products.map((product) => (
+                        <option key={product.id} value={product.id}>{product.name}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <button type="button" className="mt-1 text-xs font-bold text-brand-700 underline"
+                    onClick={() => { setProductFormIndex(index); setNewProduct({ name: '', unit: '', defaultUnitPrice: '' }); setProductError(''); }}>
+                    {labels.addProduct}
+                  </button>
+                </div>
                 <Field label={labels.quantity}>
                   <input className="input" inputMode="decimal" value={line.quantity} placeholder="0" onChange={(event) => updateLine(index, { quantity: normalizeQuantityInput(event.target.value) })} />
                 </Field>
@@ -113,6 +157,31 @@ export default function DeliveryModal({ open, onClose, firstOpenDate, onSaved })
                   <input className="input" inputMode="numeric" value={line.unitPrice} placeholder="0" onChange={(event) => updateLine(index, { unitPrice: normalizeAmountInput(event.target.value) })} />
                 </Field>
               </div>
+
+              {productFormIndex === index && (
+                <div className="mt-3 space-y-2 rounded-xl bg-slate-50 p-2">
+                  <Field label={labels.productName}>
+                    <input className="input" value={newProduct.name} maxLength={120} onChange={(event) => setNewProduct({ ...newProduct, name: event.target.value })} />
+                  </Field>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Field label={labels.unit}>
+                      <input className="input" value={newProduct.unit} maxLength={40} onChange={(event) => setNewProduct({ ...newProduct, unit: event.target.value })} />
+                    </Field>
+                    <Field label={labels.defaultUnitPrice}>
+                      <input className="input amount text-right" inputMode="numeric" value={newProduct.defaultUnitPrice} placeholder="0"
+                        onChange={(event) => setNewProduct({ ...newProduct, defaultUnitPrice: normalizeAmountInput(event.target.value) })} />
+                    </Field>
+                  </div>
+                  <InlineError message={productError} />
+                  <div className="flex gap-2">
+                    <button type="button" className="btn-secondary flex-1" onClick={() => setProductFormIndex(null)}>{labels.cancel}</button>
+                    <button type="button" className="btn-primary flex-1" disabled={productBusy} onClick={() => saveProduct(index)}>
+                      {productBusy ? labels.loading : labels.save}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {lines.length > 1 && (
                 <button type="button" className="mt-2 text-xs font-bold text-red-600 underline" onClick={() => setLines((prev) => prev.filter((_, i) => i !== index))}>
                   {labels.removeLine}
