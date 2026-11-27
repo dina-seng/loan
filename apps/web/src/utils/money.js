@@ -85,6 +85,23 @@ export function todayISO() {
   return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
+/** Plain yyyy-mm month boundaries without converting through timestamps. */
+export function monthRangeISO(value = todayISO(), offset = 0) {
+  const [year, month] = String(value).slice(0, 7).split('-').map(Number);
+  const first = new Date(Date.UTC(year, month - 1 + offset, 1));
+  const y = first.getUTCFullYear();
+  const m = first.getUTCMonth() + 1;
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const pad = (number) => String(number).padStart(2, '0');
+  return { from: `${y}-${pad(m)}-01`, to: `${y}-${pad(m)}-${pad(lastDay)}` };
+}
+
+/** Default dashboard report period: the 1st of this month through today. */
+export function defaultPeriodISO() {
+  const today = todayISO();
+  return { from: monthRangeISO(today).from, to: today };
+}
+
 export function balanceTone(direction) {
   if (direction === 'PARTNER_OWES_US') return { text: 'text-amber-900', bg: 'from-amber-50 to-orange-50', border: 'border-amber-300', dot: 'bg-amber-500' };
   if (direction === 'WE_OWE_PARTNER') return { text: 'text-sky-900', bg: 'from-sky-50 to-blue-50', border: 'border-sky-300', dot: 'bg-sky-500' };

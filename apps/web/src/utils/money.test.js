@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  balanceTone, formatDate, formatMoney, formatMonth, formatNumber, formatPositive, monthKey, normalizeAmountInput, todayISO,
+  balanceTone, defaultPeriodISO, formatDate, formatMoney, formatMonth, formatNumber, formatPositive,
+  monthKey, monthRangeISO, normalizeAmountInput, todayISO,
 } from './money.js';
 
 describe('Khmer money helpers', () => {
@@ -21,6 +22,20 @@ describe('Khmer money helpers', () => {
   it('accepts Khmer digits, commas and the riel symbol', () => {
     expect(normalizeAmountInput('៛១,២០០,០០០')).toBe('1200000');
     expect(normalizeAmountInput('12.5')).toBe('125');
+  });
+});
+
+describe('report periods', () => {
+  it('builds plain-date month boundaries, including year rollover', () => {
+    expect(monthRangeISO('2026-01-15', 0)).toEqual({ from: '2026-01-01', to: '2026-01-31' });
+    expect(monthRangeISO('2026-01-15', -1)).toEqual({ from: '2025-12-01', to: '2025-12-31' });
+    expect(monthRangeISO('2026-02-10', -1)).toEqual({ from: '2026-01-01', to: '2026-01-31' });
+  });
+
+  it('defaults to this month through today', () => {
+    const period = defaultPeriodISO();
+    expect(period.from).toBe(`${todayISO().slice(0, 7)}-01`);
+    expect(period.to).toBe(todayISO());
   });
 });
 
